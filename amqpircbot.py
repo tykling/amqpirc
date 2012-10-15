@@ -13,7 +13,7 @@
 # https://github.com/tykling/amqpirc
 #####################################################################
 
-### load libraries
+### Load libraries
 import os
 import sys
 import socket
@@ -22,7 +22,7 @@ import time
 import ssl
 from optparse import OptionParser
 
-### define and handle command line options
+### Define and handle command line options
 use = "Usage: %prog [-H irchost -P ircport -n ircnick -r ircname -i ircident -c ircchannel -s spoolpath -S]"
 parser = OptionParser(usage = use)
 parser.add_option("-H", "--irchost", dest="host", metavar="host", default="irc.efnet.org", help="The IRC server hostname or IP (default: 'irc.efnet.org')")
@@ -35,7 +35,7 @@ parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/va
 parser.add_option("-S", "--ssl", action="store_true", dest="usessl", default=False, help="Set to enable SSL connection to IRC")
 options, args = parser.parse_args()
 
-### initialize variables
+### Initialize variables
 readbuffer=""
 joined=False
 
@@ -58,36 +58,36 @@ s.settimeout(1)
 consoleoutput("Connecting to IRC server %s port %s ..." % (options.host,options.port))
 s.connect((options.host, int(options.port)))
 
-### enable SSL if requested
+### Enable SSL if requested
 if(options.usessl):
     s = ssl.wrap_socket(s)
 
-### nick and USER
+### NICK and USER
 s.send("nick %s\r\n" % options.nick)
 s.send("USER %s %s bla :%s\r\n" % (options.ident, options.host, options.realname))
 
-### JOIN channel
+### JOIN irc channel
 consoleoutput("Joining channel %s" % options.ircchannel)
 s.send("JOIN %s\r\n" % options.ircchannel)
 
 while 1:
     ### Check if we already joined the channel
     if(joined):
-        ### loop through all message file in the spool folder options.path
+        ### Loop through all message file in the spool folder options.path
         dirList=os.listdir(options.path)
         for fname in dirList:
             f = open(os.path.join(options.path, fname), "r")
             linenumber=0
-            ### loop through lines of the found message
+            ### Loop through lines of the found message
             for line in f:
                 linenumber += 1
-                ### first line is the routingkey
+                ### First line is the routingkey
                 if(linenumber==1):
                     s.send("PRIVMSG %s :Routingkey: %s\r\n" % (options.ircchannel,line))
                 else:
                     s.send("PRIVMSG %s :%s\r\n" % (options.ircchannel,line))
             f.close
-            ### delete the spool file
+            ### Delete the spool file
             os.remove(os.path.join(options.path, fname))
             consoleoutput("AMQP message sent to IRC and deleted from spool file %s" % os.path.join(options.path, fname))
 
@@ -101,7 +101,7 @@ while 1:
         for line in temp:
             line=string.split(string.rstrip(line))
 
-            ### handle PING
+            ### Handle PING
             if(line[0]=="PING"):
                 s.send("PONG %s\r\n" % line[1])
                 continue
@@ -111,23 +111,31 @@ while 1:
                 consoleoutput("Nickname %s is in use, please try another" % options.nick)
                 sys.exit(1)
 
-            ### handle raw 353 (raw 353 is sent after channel JOIN completes)
+            ### Handle raw 353 (raw 353 is sent after channel JOIN completes)
             if(line[1]=="353"):
                 joined=True
-                consoleoutput("Joined channel, waiting for messages ...")
+                consoleoutput("Joined channel %s, waiting for messages ..." % options.ircchannel)
                 continue
 
-            ### handle KICK (attempt rejoin)
+            ### Handle KICK (attempt rejoin)
             if(line[1]=="KICK" and line[2]==options.ircchannel and line[3]==options.nick):
                 joined=False
                 consoleoutput("Kicked from channel by %s - attempting rejoin..." % line[0])
                 s.send("JOIN %s\r\n" % options.ircchannel)
                 continue
-                
-    ### allow exceptions to exit the script
+
+            ### Handle raw 474 (raw 474 is sent when the bot tries to join the channel and is banned)
+            if(line[1]=="474"):
+                ### try joining again until successful, sleep 1 sec first to avoid flooding the server
+                time.sleep(1)
+                consoleoutput("Banned from channel %s - attempting rejoin..." % options.ircchannel)
+                s.send("JOIN %s\r\n" % options.ircchannel)
+                continue
+
+    ### Allow exceptions to exit the script
     except (KeyboardInterrupt, SystemExit):
         raise
-    
-    ### continue the loop after a socket timeout and other exceptions
+
+    ### Continue the loop after a socket timeout and other exceptions
     except:
         continue
