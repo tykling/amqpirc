@@ -19,6 +19,7 @@ import pika
 import sys
 import time
 import tempfile
+import getpass
 from optparse import OptionParser
 
 ### define and handle command line options
@@ -41,9 +42,17 @@ if not os.access(options.path, os.R_OK) or not os.access(options.path, os.W_OK):
     consoleoutput("Spool path %s is not readable or writable, bailing out" % options.path)
     sys.exit(1)
 
+### Check if password has been supplied on the command-line, prompt for one otherwise
+if not (options.password):
+    options.password=getpass.getpass("Enter AMQP password: ")
+
 ### Connect to ampq and open channel
-connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.server,credentials=pika.PlainCredentials(options.user, options.password)))
-channel = connection.channel()
+try:
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.server,credentials=pika.PlainCredentials(options.user, options.password)))
+    channel = connection.channel()
+except:
+    consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
+    sys.exit(1)
 
 ### Declare exchange
 channel.exchange_declare(exchange=options.exchange,type='topic',passive=True, durable=True, auto_delete=False)
