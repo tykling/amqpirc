@@ -25,14 +25,14 @@ from optparse import OptionParser
 ### define and handle command line options
 use = "Usage: %prog [-H irchost -P ircport -n ircnick -r ircname -i ircident -c ircchannel -s spoolpath -S]"
 parser = OptionParser(usage = use)
-parser.add_option("-H", "--irchost", dest="host", metavar="host", default="irc.efnet.org", help="The IRC server hostname or IP")
-parser.add_option("-P", "--ircport", dest="port", metavar="port", default=6667, help="The IRC server port")
-parser.add_option("-n", "--ircnick", dest="nick", metavar="nick", default="amqpirc", help="The bots IRC nickname")
-parser.add_option("-r", "--ircname", dest="realname", metavar="realname", default="amqpirc bot", help="The bots IRC realname")
-parser.add_option("-i", "--ircident", dest="ident", metavar="ident", default="amqpirc", help="The bots IRC ident")
-parser.add_option("-c", "--ircchannel", dest="ircchannel", metavar="ircchannel", default="#amqpirc", help="The IRC channel the bot should join")
-parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/var/spool/amqpirc/", help="The path of the spool folder")
-parser.add_option("-S", "--ssl", action="store_true", dest="usessl", default=False)
+parser.add_option("-H", "--irchost", dest="host", metavar="host", default="irc.efnet.org", help="The IRC server hostname or IP (default: 'irc.efnet.org')")
+parser.add_option("-P", "--ircport", dest="port", metavar="port", default=6667, help="The IRC server port (default: 6667)")
+parser.add_option("-n", "--ircnick", dest="nick", metavar="nick", default="amqpirc", help="The bots IRC nickname (default: 'amqpirc')")
+parser.add_option("-r", "--ircname", dest="realname", metavar="realname", default="amqpirc bot", help="The bots IRC realname (default: 'amqpirc')")
+parser.add_option("-i", "--ircident", dest="ident", metavar="ident", default="amqpirc", help="The bots IRC ident (default: 'amqpirc')")
+parser.add_option("-c", "--ircchannel", dest="ircchannel", metavar="ircchannel", default="#amqpirc", help="The IRC channel the bot should join (default: '#amqpirc')")
+parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/'")
+parser.add_option("-S", "--ssl", action="store_true", dest="usessl", default=False, help="Set to enable SSL connection to IRC")
 options, args = parser.parse_args()
 
 ### initialize variables
@@ -47,6 +47,10 @@ def consoleoutput(message):
 if not os.access(options.path, os.R_OK) or not os.access(options.path, os.W_OK):
     consoleoutput("Spool path %s is not readable or writable, bailing out" % options.path)
     sys.exit(1)
+
+### Check if options.ircchannel is prefixed with #, add it if not
+if not (options.ircchannel[:1]=="#"):
+    options.ircchannel="#%s" % options.ircchannel
 
 ### IRC connect
 s=socket.socket( )
