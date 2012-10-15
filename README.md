@@ -14,20 +14,20 @@ Example usage:
     Options:
       -h, --help            show this help message and exit
       -H host, --irchost=host
-                            The IRC server hostname or IP
+                            The IRC server hostname or IP (default: 'irc.efnet.org')
       -P port, --ircport=port
-                            The IRC server port
+                            The IRC server port (default: 6667)
       -n nick, --ircnick=nick
-                            The bots IRC nickname
+                            The bots IRC nickname (default: 'amqpirc')
       -r realname, --ircname=realname
-                            The bots IRC realname
+                            The bots IRC realname (default: 'amqpirc')
       -i ident, --ircident=ident
-                            The bots IRC ident
+                            The bots IRC ident (default: 'amqpirc')
       -c ircchannel, --ircchannel=ircchannel
-                            The IRC channel the bot should join
+                            The IRC channel the bot should join (default: '#amqpirc')
       -s path, --spoolpath=path
-                            The path of the spool folder
-      -S, --ssl
+                            The path of the spool folder (default: '/var/spool/amqpirc/')
+      -S, --ssl             Set to enable SSL connection to IRC
 
     $ ./amqpircspool.py -h
     Usage: amqpircspool.py [-s amqpserver -u amqpuser -p amqppass -e amqpexchange -r routingkey]

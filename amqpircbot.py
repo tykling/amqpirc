@@ -31,7 +31,7 @@ parser.add_option("-n", "--ircnick", dest="nick", metavar="nick", default="amqpi
 parser.add_option("-r", "--ircname", dest="realname", metavar="realname", default="amqpirc bot", help="The bots IRC realname (default: 'amqpirc')")
 parser.add_option("-i", "--ircident", dest="ident", metavar="ident", default="amqpirc", help="The bots IRC ident (default: 'amqpirc')")
 parser.add_option("-c", "--ircchannel", dest="ircchannel", metavar="ircchannel", default="#amqpirc", help="The IRC channel the bot should join (default: '#amqpirc')")
-parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/'")
+parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/')")
 parser.add_option("-S", "--ssl", action="store_true", dest="usessl", default=False, help="Set to enable SSL connection to IRC")
 options, args = parser.parse_args()
 
