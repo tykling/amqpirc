@@ -106,6 +106,11 @@ while 1:
                 s.send("PONG %s\r\n" % line[1])
                 continue
 
+            ### Handle raw 433 (raw 433 is sent when the chosen nickname is in use)
+            if(line[1]=="433"):
+                consoleoutput("Nickname %s is in use, please try another" % options.nick)
+                sys.exit(1)
+
             ### handle raw 353 (raw 353 is sent after channel JOIN completes)
             if(line[1]=="353"):
                 joined=True
