@@ -114,7 +114,7 @@ while 1:
             ### Handle raw 353 (raw 353 is sent after channel JOIN completes)
             if(line[1]=="353"):
                 joined=True
-                consoleoutput("Joined channel %s, waiting for messages ..." % options.ircchannel)
+                consoleoutput("Joined channel %s, waiting for messages to appear in spooldir %s" % (options.ircchannel,options.path))
                 continue
 
             ### Handle KICK (attempt rejoin)
