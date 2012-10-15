@@ -27,7 +27,7 @@ use = "Usage: %prog [-s amqpserver -u amqpuser -p amqppass -e amqpexchange -r ro
 parser = OptionParser(usage = use)
 parser.add_option("-H", "--amqphost", dest="server", metavar="server", default="localhost", help="The AMQP/RabbitMQ server hostname or IP (default: 'localhost')")
 parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
-parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password")
+parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt)")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
 parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey (default '#')")
 parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/var/spool/amqpirc/", help="The spool path (default '/var/spool/amqpirc')")
