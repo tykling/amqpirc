@@ -108,7 +108,7 @@ while 1:
                 continue
 
             ### handle KICK (attempt rejoin)
-            if(line[1]=="KICK" && line[2]==options.ircchannel && line[3]==options.nick):
+            if(line[1]=="KICK" and line[2]==options.ircchannel and line[3]==options.nick):
                 joined=False
                 consoleoutput("Kicked from channel by %s - attempting rejoin..." % line[0])
                 s.send("JOIN %s\r\n" % options.ircchannel)
