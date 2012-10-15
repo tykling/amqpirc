@@ -26,7 +26,7 @@ use = "Usage: %prog [-s amqpserver -u amqpuser -p amqppass -e amqpexchange -r ro
 parser = OptionParser(usage = use)
 parser.add_option("-H", "--amqphost", dest="server", metavar="server", default="localhost", help="The AMQP/RabbitMQ server hostname or IP (default: 'localhost')")
 parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
-parser.add_option("-p", "--amqppass", dest="pass", metavar="pass", help="The AMQP password")
+parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
 parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey (default '#')")
 parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/var/spool/amqpirc/", help="The spool path (default '/var/spool/amqpirc')")
@@ -42,7 +42,7 @@ if not os.access(options.path, os.R_OK) or not os.access(options.path, os.W_OK):
     sys.exit(1)
 
 ### Connect to ampq and open channel
-connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.server,credentials=pika.PlainCredentials(options.user, options.pass)))
+connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.server,credentials=pika.PlainCredentials(options.user, options.password)))
 channel = connection.channel()
 
 ### Declare exchange
