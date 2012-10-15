@@ -19,6 +19,7 @@ import sys
 import socket
 import string
 import time
+import ssl
 from optparse import OptionParser
 
 ### define and handle command line options
