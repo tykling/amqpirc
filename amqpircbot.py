@@ -19,7 +19,6 @@ import sys
 import socket
 import string
 import time
-import ssl
 from optparse import OptionParser
 
 ### Define and handle command line options
@@ -60,7 +59,11 @@ s.connect((options.host, int(options.port)))
 
 ### Enable SSL if requested
 if(options.usessl):
+    consoleoutput("Enabling SSL for this connection...")
+    import ssl
     s = ssl.wrap_socket(s)
+else:
+    consoleoutput("Not enabling SSL for this connection...")
 
 ### NICK and USER
 s.send("nick %s\r\n" % options.nick)
