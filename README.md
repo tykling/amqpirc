@@ -1,40 +1,48 @@
 amqpirc
 =======
+Python scripts that form an AMQP/RabbitMQ<>IRC proxy. AMQP messages can be output to IRC, 
+and you can send AMQP messages from IRC by sending commands to the bot.
 
-Python scripts to listen to an AMQP/RabbitMQ exchange and output messages to IRC.
+amqpirc was written by Thomas Steen Rasmussen <thomas@gibfest.dk>, the latest version
+can always be found on Github: https://github.com/tykling/amqpirc - pull requests are welcome.
 
-- amqpircbot.py is the IRC bot which connects to the specified IRC server and outputs messages from the specified spool path.
-- amqpircspool.py is the AMQP client which connects to AMQP/RabbitMQ and listens to the specified exchange, writing messages to the specified spool path.
+
+List of features
+================
+- Relay AMQP messages to IRC
+- Send messages from IRC to AMQP
+
+
+Background
+==========
+amqpircbot.py is the main script, the IRC bot which connects to the specified IRC server as 
+well as the specified AMQP server. The bot will launch the amqpircspool.py and listen for messages 
+as soon as it has joined the IRC channel. You should not need to launch amqpircspool.py manually.
+
+The IRC bot logs messages to the console when something happens.
+
 
 Example usage:
 ==============
     $ ./amqpircbot.py -h
-    Usage: amqpircbot.py [-H irchost -P ircport -n ircnick -r ircname -i ircident -c ircchannel -s spoolpath -S]
+    Usage: amqpircbot.py [options]
 
     Options:
       -h, --help            show this help message and exit
-      -H host, --irchost=host
+      -H irchost, --irchost=irchost
                             The IRC server hostname or IP (default: 'irc.efnet.org')
-      -P port, --ircport=port
+      -P ircport, --ircport=ircport
                             The IRC server port (default: 6667)
       -n nick, --ircnick=nick
                             The bots IRC nickname (default: 'amqpirc')
-      -r realname, --ircname=realname
+      -R realname, --ircname=realname
                             The bots IRC realname (default: 'amqpirc')
       -i ident, --ircident=ident
                             The bots IRC ident (default: 'amqpirc')
       -c ircchannel, --ircchannel=ircchannel
                             The IRC channel the bot should join (default: '#amqpirc')
-      -s path, --spoolpath=path
-                            The path of the spool folder (default: '/var/spool/amqpirc/')
       -S, --ssl             Set to enable SSL connection to IRC
-
-    $ ./amqpircspool.py -h
-    Usage: amqpircspool.py [-s amqpserver -u amqpuser -p amqppass -e amqpexchange -r routingkey]
-
-    Options:
-      -h, --help            show this help message and exit
-      -H server, --amqphost=server
+      -a amqpserver, --amqphost=amqpserver
                             The AMQP/RabbitMQ server hostname or IP (default: 'localhost')
       -u user, --amqpuser=user
                             The AMQP username
@@ -43,6 +51,18 @@ Example usage:
       -e exchange, --amqpexchange=exchange
                             The AMQP exchange name (default 'myexchange')
       -r routingkey, --routingkey=routingkey
-                            The AMQP routingkey (default '#')
-      -s path, --spoolpath=path
-                            The spool path (default '/var/spool/amqpirc')
+                            The AMQP routingkey to listen for (default '#')
+      -s amqpspoolpath, --amqpspoolpath=amqpspoolpath
+                            The path of the spool folder (default: '/var/spool/amqpirc/')
+
+
+Todo
+====
+- ACL support for IRC so not everyone can send commands to the bot
+- Possibly flood control support for IRC
+- Dynamically change (with IRC commands) which routingkey the bot using to listen for AMQP messages
+- IRC socket timeout/disconnect handling
+- Hide password somehow when launching the spool listener
+- Look into merging the two scripts to one
+- Check spool status through IRC commands
+- Stop/start spooler through IRC commands

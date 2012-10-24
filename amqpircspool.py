@@ -19,36 +19,31 @@ import pika
 import sys
 import time
 import tempfile
-import getpass
 from optparse import OptionParser
 
 ### define and handle command line options
 use = "Usage: %prog [-s amqpserver -u amqpuser -p amqppass -e amqpexchange -r routingkey]"
 parser = OptionParser(usage = use)
-parser.add_option("-H", "--amqphost", dest="server", metavar="server", default="localhost", help="The AMQP/RabbitMQ server hostname or IP (default: 'localhost')")
+parser.add_option("-a", "--amqphost", dest="amqpserver", metavar="amqpserver", default="localhost", help="The AMQP/RabbitMQ server hostname or IP (default: 'localhost')")
 parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
 parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt)")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
-parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey (default '#')")
-parser.add_option("-s", "--spoolpath", dest="path", metavar="path", default="/var/spool/amqpirc/", help="The spool path (default '/var/spool/amqpirc')")
+parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey to listen for (default '#')")
+parser.add_option("-s", "--amqpspoolpath", dest="amqpspoolpath", metavar="amqpspoolpath", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/')")
 options, args = parser.parse_args()
 
 ### Function to output to the console with a timestamp
 def consoleoutput(message):
     print " [%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),message)
 
-### Check access to spool path options.path
-if not os.access(options.path, os.R_OK) or not os.access(options.path, os.W_OK):
-    consoleoutput("Spool path %s is not readable or writable, bailing out" % options.path)
+### Check access to spool path options.amqpspoolpath
+if not os.access(options.amqpspoolpath, os.R_OK) or not os.access(options.amqpspoolpath, os.W_OK):
+    consoleoutput("Spool path %s is not readable or writable, bailing out" % options.amqpspoolpath)
     sys.exit(1)
-
-### Check if password has been supplied on the command-line, prompt for one otherwise
-if not (options.password):
-    options.password=getpass.getpass("Enter AMQP password: ")
 
 ### Connect to ampq and open channel
 try:
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.server,credentials=pika.PlainCredentials(options.user, options.password)))
+    connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
     channel = connection.channel()
 except:
     consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
@@ -67,12 +62,12 @@ consoleoutput("Waiting for messages matching routingkey %s. To exit press CTRL+C
 
 ### This function is called whenever a message is received
 def process_message(ch, method, properties, body):
-    fd, filename = tempfile.mkstemp(dir=options.path)
+    fd, filename = tempfile.mkstemp(dir=options.amqpspoolpath)
     f = os.fdopen(fd, 'wt')
     f.write(method.routing_key+'\n')
     f.write(body)
     f.close
-    consoleoutput("Message written to spool file %s with routingkey %s:" % (filename,method.routing_key))
+    consoleoutput("AMQP message received and written to spool file %s with routingkey %s:" % (filename,method.routing_key))
     print body
 
 ### Register callback function process_message to be called when a message is received
