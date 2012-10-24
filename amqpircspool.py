@@ -62,7 +62,8 @@ consoleoutput("Waiting for messages matching routingkey %s. To exit press CTRL+C
 
 ### This function is called whenever a message is received
 def process_message(ch, method, properties, body):
-    fd, filename = tempfile.mkstemp(dir=options.amqpspoolpath)
+    tid="%f-" % time.time()
+    fd, filename = tempfile.mkstemp(dir=options.amqpspoolpath,prefix=tid)
     f = os.fdopen(fd, 'wt')
     f.write(method.routing_key+'\n')
     f.write(body)
