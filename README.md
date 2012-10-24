@@ -56,6 +56,14 @@ Example usage:
                             The path of the spool folder (default: '/var/spool/amqpirc/')
 
 
+Example IRC command
+===================
+22:41 <@Tykling> amqpirc: ping
+22:41 < amqpirc> Tykling: pong
+22:41 <@Tykling> amqpirc: amqpsend test.routingkey.lol message body goes here
+22:41 < amqpirc> Routingkey: test.routingkey.lol
+22:41 < amqpirc> message body goes here
+
 Todo
 ====
 - ACL support for IRC so not everyone can send commands to the bot
