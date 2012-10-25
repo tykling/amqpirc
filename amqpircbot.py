@@ -145,8 +145,8 @@ while 1:
             consoleoutput(spoolcommand)
             try:
                 spoolproc = subprocess.Popen(spoolcommandlist)
-                consoleoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.spoolpath)
-                ircoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.spoolpath)
+                consoleoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.amqpspoolpath)
+                ircoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.amqpspoolpath)
             except:
                 consoleoutput("Unable to start AMQP spooler :(")
                 ircoutput("Unable to start AMQP spooler :(")
