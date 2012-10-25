@@ -112,8 +112,14 @@ s.send("JOIN %s\r\n" % options.ircchannel)
 while 1:
     ### Check if we already joined the channel
     if(joined):
-        ### Loop through all message file in the spool folder options.amqpspoolpath
+        ### Find all message file in the spool folder options.amqpspoolpath
         dirList=os.listdir(options.amqpspoolpath)
+
+        ### sort filelist
+        if(len(dirList)<0):
+            dirList=dirList.sort()
+
+        ### Loop through found files in chronological order, first message first
         for fname in dirList:
             f = open(os.path.join(options.amqpspoolpath, fname), "r")
             linenumber=0
