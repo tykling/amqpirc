@@ -72,6 +72,10 @@ if not os.access(options.amqpspoolpath, os.R_OK) or not os.access(options.amqpsp
 if not (options.ircchannel[:1]=="#"):
     options.ircchannel="#%s" % options.ircchannel
 
+### Function to send message to IRC
+def ircoutput(message,target=options.ircchannel):
+    s.send("PRIVMSG %s :%s\r\n" % (target,message))
+
 ### Connect to ampq and open channel
 try:
     connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
@@ -118,9 +122,9 @@ while 1:
                 linenumber += 1
                 ### First line is the routingkey
                 if(linenumber==1):
-                    s.send("PRIVMSG %s :Routingkey: %s\r\n" % (options.ircchannel,line))
+                    ircoutput("Routingkey: %s" % line)
                 else:
-                    s.send("PRIVMSG %s :%s\r\n" % (options.ircchannel,line))
+                    ircoutput(line)
             f.close
             ### Delete the spool file
             os.remove(os.path.join(options.amqpspoolpath, fname))
@@ -130,6 +134,7 @@ while 1:
         if(spoolproc==None or spoolproc.poll()!=None):
             ### Start AMQP spool process
             consoleoutput("Launching AMQP spool process...")
+            ircoutput("Launching AMQP spool process...")
             consoleoutput(spoolcommand)
             try:
                 spoolproc = subprocess.Popen(spoolcommandlist)
@@ -193,9 +198,9 @@ while 1:
                     channel.basic_publish(exchange=options.exchange,routing_key=routingkey,body=amqpbody,properties=properties)
                 elif(line[4]=="ping"):
                     ### send PONG to IRC
-                    s.send("PRIVMSG %s :%s: pong\r\n" % (options.ircchannel,sendernick))
+                    ircoutput("%s: pong" % sendernick)
                 else:
-                    s.send("PRIVMSG %s :%s: unrecognized command: %s\r\n" % (options.ircchannel,sendernick,line[4]))
+                    ircoutput("%s: unrecognized command: %s" % (sendernick,line[4]))
                     
     ### Allow exceptions to exit the script
     except (KeyboardInterrupt, SystemExit):
