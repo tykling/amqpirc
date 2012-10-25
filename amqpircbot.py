@@ -56,7 +56,8 @@ if not (options.password):
 readbuffer=""
 joined=False
 spoolproc=None
-spoolcommand = "/usr/home/tykling/amqpircspool.py -a %s -u %s -p %s -e %s" % (options.amqpserver,options.user,options.password,options.exchange)
+script_dir = os.path.dirname(os.path.realpath(__file__))
+spoolcommand = "%s/amqpircspool.py -a %s -u %s -p %s -e %s" % (script_dir,options.amqpserver,options.user,options.password,options.exchange)
 spoolcommandlist = spoolcommand.split()
 
 ### Function to output to the console with a timestamp
@@ -144,9 +145,11 @@ while 1:
             consoleoutput(spoolcommand)
             try:
                 spoolproc = subprocess.Popen(spoolcommandlist)
-                consoleoutput("Successfully launched AMQP spool process...")
+                consoleoutput("Successfully launched AMQP spool process! Waiting for messages to appear in %s..." % options.ampqspoolpath)
+                ircoutput("Successfully launched AMQP spool process! Waiting for messages to appear in %s..." % options.ampqspoolpath)
             except:
                 consoleoutput("Unable to start AMQP spooler :(")
+                ircoutput("Unable to start AMQP spooler :(")
 
     else:
         ### Try joining the Channel
