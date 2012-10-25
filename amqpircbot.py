@@ -56,7 +56,8 @@ if not (options.password):
 readbuffer=""
 joined=False
 spoolproc=None
-spoolcommand = "/usr/home/tykling/amqpircspool.py -a %s -u %s -p %s -e %s" % (options.amqpserver,options.user,options.password,options.exchange)
+scriptdir=os.path.dirname(os.path.realpath(__file__))
+spoolcommand = "%s/amqpircspool.py -a %s -u %s -p %s -e %s" % (scriptdir,options.amqpserver,options.user,options.password,options.exchange)
 spoolcommandlist = spoolcommand.split()
 
 ### Function to output to the console with a timestamp
@@ -95,11 +96,11 @@ s.connect((options.irchost, int(options.ircport)))
 
 ### Enable SSL if requested
 if(options.ircusessl):
-    consoleoutput("Enabling SSL for this connection...")
+    consoleoutput("Enabling SSL for this IRC connection...")
     import ssl
     s = ssl.wrap_socket(s)
 else:
-    consoleoutput("Not enabling SSL for this connection...")
+    consoleoutput("Not enabling SSL for this IRC connection...")
 
 ### NICK and USER
 s.send("nick %s\r\n" % options.nick)
@@ -144,9 +145,11 @@ while 1:
             consoleoutput(spoolcommand)
             try:
                 spoolproc = subprocess.Popen(spoolcommandlist)
-                consoleoutput("Successfully launched AMQP spool process...")
+                consoleoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.spoolpath)
+                ircoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.spoolpath)
             except:
                 consoleoutput("Unable to start AMQP spooler :(")
+                ircoutput("Unable to start AMQP spooler :(")
 
     else:
         ### Try joining the Channel
