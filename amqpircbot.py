@@ -22,11 +22,16 @@ import time
 import subprocess
 import getpass
 import pika
+import ssl
+from collections import deque
 from optparse import OptionParser
 
 ### Define and handle command line options
 use = "Usage: %prog [options]"
 parser = OptionParser(usage = use)
+
+### Debug option
+parser.add_option("-d", "--debug", action="store_true", dest="debug", default=False, help="Set to enable debugging, output received IRC messages to console...")
 
 ### IRC specific options
 parser.add_option("-H", "--irchost", dest="irchost", metavar="irchost", default="irc.efnet.org", help="The IRC server hostname or IP (default: 'irc.efnet.org')")
@@ -52,6 +57,12 @@ options, args = parser.parse_args()
 if not (options.password):
     options.password=getpass.getpass("Enter AMQP password: ")
 
+### Check if options.ircchannel is prefixed with #, add it if not
+if not (options.ircchannel[:1]=="#"):
+    options.ircchannel="#%s" % options.ircchannel
+
+###############################################################################
+
 ### Initialize variables
 readbuffer=""
 joined=False
@@ -59,56 +70,106 @@ spoolproc=None
 scriptdir=os.path.dirname(os.path.realpath(__file__))
 spoolcommand = "%s/amqpircspool.py -a %s -u %s -p %s -e %s" % (scriptdir,options.amqpserver,options.user,options.password,options.exchange)
 spoolcommandlist = spoolcommand.split()
+ircq = deque()
+joinsent=False
 
 ### Function to output to the console with a timestamp
 def consoleoutput(message):
     print " [%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),message)
+
+### Function to send PRIVMSG message to IRC
+def ircprivmsg(message,target=options.ircchannel):
+    ircsend("PRIVMSG %s :%s" % (target,message))
+
+### Function to send message on the IRC socket (adds \r\n to the message)
+def ircsend(message):
+    if(options.debug):
+        consoleoutput(">IRC: %s" % message)
+    if(message[-2:]=='\r\n'):
+        ircq.append("%s" % message)
+    else:
+        ircq.append("%s\r\n" % message)
+
+def queuesend():
+    if(len(ircq)>0):
+        try:
+            s.send(ircq.popleft())
+        except Exception as e:
+            consoleoutput("Socket exception sending to IRC, type: %s exception message: %s" % (str(type(e)),e.strerror))
+            sys.exit(1)
+
+def joinchannel(channel=options.ircchannel):
+    if not joinsent:
+        consoleoutput("Joining channel %s" % options.ircchannel)
+        global joinsent
+        ircsend("JOIN %s" % channel)
+        joinsent=True
+
+def setnick(nick=options.nick):
+    consoleoutput("Setting IRC nickname %s" % nick)
+    ircsend("NICK %s" % nick)
+
+### Define exception to use for socket read errors
+class ReadError(Exception):
+    pass
 
 ### Check access to spool path options.amqpspoolpath
 if not os.access(options.amqpspoolpath, os.R_OK) or not os.access(options.amqpspoolpath, os.W_OK):
     consoleoutput("AMQP spool path %s is not readable or writable, bailing out" % options.amqpspoolpath)
     sys.exit(1)
 
-### Check if options.ircchannel is prefixed with #, add it if not
-if not (options.ircchannel[:1]=="#"):
-    options.ircchannel="#%s" % options.ircchannel
+###############################################################################
 
-### Function to send message to IRC
-def ircoutput(message,target=options.ircchannel):
-    s.send("PRIVMSG %s :%s\r\n" % (target,message))
-
-### Connect to ampq and open channel
+### Connect to ampq
 try:
     connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
+except:
+    consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
+    sys.exit(1)
+
+### Open AMQP channel
+try:
     channel = connection.channel()
 except:
-    consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
+    consoleoutput("Unable to open AMQP channel, error: %s" % sys.exc_info()[0])
     sys.exit(1)
 
 ### Declare exchange
-channel.exchange_declare(exchange=options.exchange,type='topic',passive=True, durable=True, auto_delete=False)
+try:
+    channel.exchange_declare(exchange=options.exchange,type='topic',passive=True, durable=True, auto_delete=False)
+except:
+    consoleoutput("Unable to declare AMQP exchange, error: %s" % sys.exc_info()[0])
+    sys.exit(1)
 
 ### IRC connect
-s=socket.socket( )
-s.settimeout(1)
-consoleoutput("Connecting to IRC server %s port %s ..." % (options.irchost,options.ircport))
-s.connect((options.irchost, int(options.ircport)))
+try:
+    s=socket.socket( )
+    s.settimeout(1)
+    consoleoutput("Connecting to IRC server %s port %s ..." % (options.irchost,options.ircport))
+    s.connect((options.irchost, int(options.ircport)))
+except:
+    consoleoutput("Unable to connect to IRC, error: %s" % sys.exc_info()[0])
+    sys.exit(1)
 
 ### Enable SSL if requested
 if(options.ircusessl):
     consoleoutput("Enabling SSL for this IRC connection...")
-    import ssl
-    s = ssl.wrap_socket(s)
+    try:
+        s = ssl.wrap_socket(s)
+    except:
+        consoleoutput("Unable to enable SSL for this connection, error: %s" % sys.exc_info()[0])
+        sys.exit(1)
 else:
     consoleoutput("Not enabling SSL for this IRC connection...")
 
 ### NICK and USER
-s.send("nick %s\r\n" % options.nick)
-s.send("USER %s %s bla :%s\r\n" % (options.ident, options.irchost, options.realname))
+setnick()
+ircsend("USER %s %s bla :%s" % (options.ident,options.irchost,options.realname))
 
 ### JOIN irc channel
-consoleoutput("Joining channel %s" % options.ircchannel)
-s.send("JOIN %s\r\n" % options.ircchannel)
+joinchannel()
+
+###############################################################################
 
 while 1:
     ### Check if we already joined the channel
@@ -116,12 +177,8 @@ while 1:
         ### Find all message file in the spool folder options.amqpspoolpath
         dirList=os.listdir(options.amqpspoolpath)
 
-        ### sort filelist
-        if(len(dirList)<0):
-            dirList=dirList.sort()
-
         ### Loop through found files in chronological order, first message first
-        for fname in dirList:
+        for fname in sorted(dirList):
             f = open(os.path.join(options.amqpspoolpath, fname), "r")
             linenumber=0
             ### Loop through lines of the found message
@@ -129,56 +186,67 @@ while 1:
                 linenumber += 1
                 ### First line is the routingkey
                 if(linenumber==1):
-                    ircoutput("Routingkey: %s" % line)
+                    ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (line,len(dirList)-1))
                 else:
-                    ircoutput(line)
+                    ircprivmsg(line)
             f.close
             ### Delete the spool file
             os.remove(os.path.join(options.amqpspoolpath, fname))
-            consoleoutput("AMQP message sent to IRC and deleted from spool file %s" % os.path.join(options.amqpspoolpath, fname))
+            consoleoutput("AMQP message sent to IRC queue and deleted from spool file %s" % os.path.join(options.amqpspoolpath, fname))
+            break
 
         ### Check if AMQP process is running
         if(spoolproc==None or spoolproc.poll()!=None):
             ### Start AMQP spool process
             consoleoutput("Launching AMQP spool process...")
-            ircoutput("Launching AMQP spool process...")
+            ircprivmsg("Launching AMQP spool process...")
             consoleoutput(spoolcommand)
             try:
                 spoolproc = subprocess.Popen(spoolcommandlist)
                 consoleoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.amqpspoolpath)
-                ircoutput("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.amqpspoolpath)
+                ircprivmsg("Successfully launched AMQP spool process, waiting for messages to appear in %s..." % options.amqpspoolpath)
             except:
                 consoleoutput("Unable to start AMQP spooler :(")
-                ircoutput("Unable to start AMQP spooler :(")
+                ircprivmsg("Unable to start AMQP spooler :(")
 
     else:
-        ### Try joining the Channel
-        s.send("JOIN %s\r\n" % options.ircchannel)
+        joinchannel()
 
-    ### Try reading data from the IRC socket, timeout is 1 second
+    ### Try reading data from the IRC socket, timeout is 1 second, 
+    ### check for disconnected socket and raise exception
     try:
-        readbuffer=readbuffer+s.recv(1024)
+        buf = s.recv(1024)
+        if not buf:
+            raise ReadError("Socket disconnected ?")
+        readbuffer=readbuffer+buf
         temp=string.split(readbuffer, "\n")
         readbuffer=temp.pop( )
         
         ### Loop through the lines received from the IRC server
         for line in temp:
+            if(options.debug):
+                consoleoutput("<IRC: %s" % line)
             line=string.split(string.rstrip(line))
 
             ### Handle PING
             if(line[0]=="PING"):
-                s.send("PONG %s\r\n" % line[1])
+                ircsend("PONG %s" % line[1])
                 continue
 
             ### Handle raw 433 (raw 433 is sent when the chosen nickname is in use)
             if(line[1]=="433"):
-                consoleoutput("Nickname %s is in use, please try another" % options.nick)
-                sys.exit(1)
+                consoleoutput("Nickname %s is in use, trying another..." % options.nick)
+                setnick(nick="%s123" % options.nick)
+                
+                joinsent=False
+                joinchannel()
+                continue
 
             ### Handle raw 353 (raw 353 is sent after channel JOIN completes)
             if(line[1]=="353"):
                 joined=True
                 consoleoutput("Joined channel %s" % options.ircchannel)
+                joinsent=False
                 continue
 
             ### Handle KICK (attempt rejoin)
@@ -207,14 +275,41 @@ while 1:
                     channel.basic_publish(exchange=options.exchange,routing_key=routingkey,body=amqpbody,properties=properties)
                 elif(line[4]=="ping"):
                     ### send PONG to IRC
-                    ircoutput("%s: pong" % sendernick)
+                    ircprivmsg("%s: pong" % sendernick)
                 else:
-                    ircoutput("%s: unrecognized command: %s" % (sendernick,line[4]))
-                    
-    ### Allow exceptions to exit the script
-    except (KeyboardInterrupt, SystemExit):
-        raise                                      
+                    ircprivmsg("%s: unrecognized command: %s" % (sendernick,line[4]))
 
-    ### Continue the loop after a socket timeout and other exceptions
-    except:
+    ### Allow control-c to exit the script
+    except (KeyboardInterrupt):
+        consoleoutput("control-c received, exiting")
+        sys.exit(0)
+    
+    ### socket read error exception (disconnected from IRC)
+    except (ReadError):
+        consoleoutput("socket disconnected/error, bailing out")
+        sys.exit(1)
+
+    ### Continue the loop after SSL socket timeout error (happens if we didn't receive any data before timeout)
+    except ssl.SSLError as e:
+        if(e.message=="The read operation timed out"):
+            ### Send a line to IRC if any are waiting in the queue to be sent...
+            queuesend()
+            continue
+        else:
+            ### raise any other exception
+            raise
+
+    ### Continue the loop after socket timeout error (happens if we didn't receive any data before timeout)
+    except socket.timeout as e:
+        ### Send a line to IRC if any are waiting in the queue to be sent...
+        queuesend()
         continue
+
+    ### Catch sys.exit from earlier in the script
+    except SystemExit:
+        os._exit(0)
+
+    ### Catch other exceptions
+    except Exception as e:
+        consoleoutput("uncaught exception type: %s exception message: %s" % (str(type(e)),e.message))
+        sys.exit(1)
