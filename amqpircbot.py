@@ -45,7 +45,7 @@ parser.add_option("-S", "--ssl", action="store_true", dest="ircusessl", default=
 ### AMQP specific options
 parser.add_option("-a", "--amqphost", dest="amqpserver", metavar="amqpserver", default="localhost", help="The AMQP/RabbitMQ server hostname or IP (default: 'localhost')")
 parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
-parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt)")
+parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt). Set to 'nopass' if user/pass should not be used")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
 parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey to listen for (default '#')")
 parser.add_option("-s", "--amqpspoolpath", dest="amqpspoolpath", metavar="amqpspoolpath", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/')")
@@ -72,6 +72,7 @@ spoolcommand = "%s/amqpircspool.py -a %s -u %s -p %s -e %s" % (scriptdir,options
 spoolcommandlist = spoolcommand.split()
 ircq = deque()
 joinsent=False
+nickcount=0
 
 ### Function to output to the console with a timestamp
 def consoleoutput(message):
@@ -121,11 +122,18 @@ if not os.access(options.amqpspoolpath, os.R_OK) or not os.access(options.amqpsp
 ###############################################################################
 
 ### Connect to ampq
-try:
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
-except:
-    consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
-    sys.exit(1)
+if not (options.password == 'nopass'):
+    try:
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
+    except:
+        consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
+        sys.exit(1)
+else:
+    try:
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver))
+    except:
+        consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
+        sys.exit(1)
 
 ### Open AMQP channel
 try:
@@ -236,7 +244,8 @@ while 1:
             ### Handle raw 433 (raw 433 is sent when the chosen nickname is in use)
             if(line[1]=="433"):
                 consoleoutput("Nickname %s is in use, trying another..." % options.nick)
-                setnick(nick="%s123" % options.nick)
+                setnick(nick="%s%s" % (options.nick,nickcount))
+                nickcount += 1
                 
                 joinsent=False
                 joinchannel()

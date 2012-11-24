@@ -26,7 +26,7 @@ use = "Usage: %prog [-s amqpserver -u amqpuser -p amqppass -e amqpexchange -r ro
 parser = OptionParser(usage = use)
 parser.add_option("-a", "--amqphost", dest="amqpserver", metavar="amqpserver", default="localhost", help="The AMQP/RabbitMQ server hostname or IP (default: 'localhost')")
 parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
-parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt)")
+parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt). Set to 'nopass' if user/pass should not be used")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
 parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey to listen for (default '#')")
 parser.add_option("-s", "--amqpspoolpath", dest="amqpspoolpath", metavar="amqpspoolpath", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/')")
@@ -42,12 +42,20 @@ if not os.access(options.amqpspoolpath, os.R_OK) or not os.access(options.amqpsp
     sys.exit(1)
 
 ### Connect to ampq and open channel
-try:
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
-    channel = connection.channel()
-except:
-    consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
-    sys.exit(1)
+if not (options.password == 'nopass'):
+    try:
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
+        channel = connection.channel()
+    except:
+        consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
+        sys.exit(1)
+else:
+    try:
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver))
+        channel = connection.channel()
+    except:
+        consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
+        sys.exit(1)
 
 ### Declare exchange
 channel.exchange_declare(exchange=options.exchange,type='topic',passive=True, durable=True, auto_delete=False)
