@@ -47,7 +47,7 @@ Example usage:
       -u user, --amqpuser=user
                             The AMQP username
       -p password, --amqppass=password
-                            The AMQP password (omit for password prompt)
+                            The AMQP password (omit for password prompt, set to 'nopass' for no username and password)
       -e exchange, --amqpexchange=exchange
                             The AMQP exchange name (default 'myexchange')
       -r routingkey, --routingkey=routingkey
