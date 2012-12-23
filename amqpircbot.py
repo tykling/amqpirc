@@ -66,6 +66,7 @@ if not (options.ircchannel[:1]=="#"):
 ### Initialize variables
 scriptdir=os.path.dirname(os.path.realpath(__file__))
 ircq = deque()
+routingkey = ""
 
 ### Function to output to the console with a timestamp
 def consoleoutput(message):
@@ -193,7 +194,7 @@ class IRCClient:
 
     def sanitycheck(self,ircfeed):
         for line in ircfeed:
-             ### Handle PING
+            ### Handle PING
             if(line[0]=="PING"):
                 self.ircsend("PONG %s" % line[1])
                 continue
@@ -255,12 +256,6 @@ class Spoold(multiprocessing.Process):
         self.exch          = exch
         self.rkey          = rkey
 
-    def run(self):
-        ### Check access to spool path options.amqpspoolpath
-        if not os.access(self.amqpspoolpath, os.R_OK) or not os.access(self.amqpspoolpath, os.W_OK):
-            consoleoutput("Spool path %s is not readable or writable, bailing out" % amqpspoolpath)
-            sys.exit(1)
-
         ### Connect to ampq and open channel
         if not (self.password == 'nopass'):
             try:
@@ -278,20 +273,24 @@ class Spoold(multiprocessing.Process):
                 consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
                 sys.exit(1)
 
+        ### Check access to spool path options.amqpspoolpath
+        if not os.access(self.amqpspoolpath, os.R_OK) or not os.access(self.amqpspoolpath, os.W_OK):
+            consoleoutput("Spool path %s is not readable or writable, bailing out" % amqpspoolpath)
+            sys.exit(1)
+
         ### Declare exchange
         self.channel.exchange_declare(exchange=self.exch,type='topic',passive=True, durable=True, auto_delete=False)
 
         ### Declare queue and get unique queuename
         self.result = channel.queue_declare(exclusive=True)
         self.queue_name = self.result.method.queue
-
         ### Bind queue to exchange with the wildcard routing key #
         self.channel.queue_bind(exchange=self.exch,queue=self.queue_name,routing_key=self.rkey)
         consoleoutput("Waiting for messages matching routingkey %s. To exit press CTRL+C" % self.rkey)
 
         ### Register callback function process_message to be called when a message is received
         self.channel.basic_consume(self.process_message,queue=self.queue_name,no_ack=True)
-
+    def run(self):
         ### Loop waiting for messages
         self.channel.start_consuming()
 
@@ -313,15 +312,12 @@ spoolinst.start()
 ### Connect to IRC
 ircinst = IRCClient(options.irchost,options.ircport,options.ircusessl)
 
+temp=""
 ###############################################################################
 while 1:
     try:
-        ### Try reading data from the IRC socket, timeout is 1 second, 
-        temp = ircinst.readirc()
-
         ### Handle commmands, if any
         ircinst.handlecmds(temp)
-
         ### check if on IRC, haven't been kicked/banned, having nick etc. If so, pass messages from spool to irc channel
         if ircinst.sanitycheck(temp):
             ### Find all message file in the spool folder options.amqpspoolpath
@@ -347,6 +343,13 @@ while 1:
         #### otherwise try to join the channel
         else:
             ircinst.joinchannel()
+
+        ### after irc-feed have been processed it is erased
+        temp = ""
+
+        ### Try reading data from the IRC socket, timeout is 1 second, 
+        ### If there is no data to read, an exception is raised and the loop continues
+        temp = ircinst.readirc()
 
     ### Allow control-c to exit the script
     except (KeyboardInterrupt):
