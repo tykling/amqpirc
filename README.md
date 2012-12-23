@@ -69,6 +69,5 @@ Todo
 - ACL support for IRC so not everyone can send commands to the bot
 - Dynamically change (with IRC commands) which routingkey the bot using to listen for AMQP messages
 - Hide password somehow when launching the spool listener
-- Look into merging the two scripts to one
 - Check spool status through IRC commands
 - Stop/start spooler through IRC commands
