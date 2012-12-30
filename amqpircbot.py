@@ -47,8 +47,9 @@ parser.add_option("-a", "--amqphost", dest="amqpserver", metavar="amqpserver", d
 parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
 parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt). Set to 'nopass' if user/pass should not be used")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
-parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey to listen for (default '#')")
+parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkeys to listen for in a comma seperated list. (default: '#')")
 parser.add_option("-s", "--amqpspoolpath", dest="amqpspoolpath", metavar="amqpspoolpath", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/')")
+parser.add_option("-I", "--ignore", dest="ignore", metavar="ignore", default="none", help="Ignore messages where the routingkey begins with one of the keys in this comma seperated list (default: None)")
 
 ### get options
 options, args = parser.parse_args()
@@ -66,13 +67,65 @@ if not (options.ircchannel[:1]=="#"):
 ### Initialize variables
 scriptdir=os.path.dirname(os.path.realpath(__file__))
 ircq = deque()
-routingkey = ""
+
+### Extract routing keys from options input
+filter_rules_allow = string.split(options.routingkey,",")
+if options.ignore == "none":
+    filter_rules_deny = [''] 
+else:
+    filter_rules_deny = string.split(options.ignore,",")
+### Create rules for routing_key_filter()
+for n in range(len(filter_rules_deny)):
+    filter_rules_deny[n] = string.split(filter_rules_deny[n],".")
+for n in range(len(filter_rules_allow)):
+    filter_rules_allow[n] = string.split(filter_rules_allow[n],".")
 
 ### Function to output to the console with a timestamp
 def consoleoutput(message):
     print " [%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),message)
 
+### Function to determine whether a routing-key match the deny/allow filtering rules:
+### First it determines if the message is in the allow-list, if it is, it checks whether it is in the deny list
+### Returns True if the message is relevant and False if it should be discarded 
+def routing_key_filter(routing_key):
+    # Checks each subkey to see if it matches the rule. If the entire rule matches (the relevant part of) the routing key the rule is validated 
+    # otherwise it is not
+    def validate_rules(filter_rules):
+        rule_validated = False
+        for rule in filter_rules: 
+            min_len        = min(len(rule),len(subkeys))
+            for n in range(min_len):
+                ### Check if sub-key match or wildcard is used
+                if rule[n] == "#":
+                    rule_validated = True
+                    break
+                elif not rule[n] == subkeys[n]:
+                    break
 
+                ### Check if we're done checking and if there is a match or not
+                if n + 1 == len(rule):
+                    rule_validated = True
+                    break
+                elif n + 1 == len(subkeys) and n + 1 < len(rule):
+                    rule_validated = False
+                    break                   
+
+            ### If the rule validated the message, stop looking thorugh filter_rules_allow
+            if rule_validated:
+                break
+        return rule_validated
+
+    ### split message routing key into sub-keys 
+    subkeys = string.split(routing_key,".")
+
+    ### If the the routingkey is in filter_rules_allow see if it is in the ignore list. If so, return false otherwise return true
+    if not validate_rules(filter_rules_allow):
+        return False
+    else:
+        if (filter_rules_deny[0] == "" and len(filter_rules_deny) == 1) or validate_rules(filter_rules_deny):
+            return False
+        else:
+            return True
 
 ### Define exception to use for socket read errors
 class ReadError(Exception):
@@ -247,14 +300,13 @@ class IRCClient:
 
 ### AMQP-receiving and spool-writing object
 class Spoold(multiprocessing.Process):
-    def __init__(self,amqpspoolpath,amqphost,user,password,exch,rkey):
+    def __init__(self,amqpspoolpath,amqphost,user,password,exch):
         multiprocessing.Process.__init__(self)
         self.amqpspoolpath = amqpspoolpath
         self.amqphost      = amqphost
         self.user          = user
         self.password      = password
         self.exch          = exch
-        self.rkey          = rkey
 
         ### Connect to ampq and open channel
         if not (self.password == 'nopass'):
@@ -285,8 +337,8 @@ class Spoold(multiprocessing.Process):
         self.result = channel.queue_declare(exclusive=True)
         self.queue_name = self.result.method.queue
         ### Bind queue to exchange with the wildcard routing key #
-        self.channel.queue_bind(exchange=self.exch,queue=self.queue_name,routing_key=self.rkey)
-        consoleoutput("Waiting for messages matching routingkey %s. To exit press CTRL+C" % self.rkey)
+        self.channel.queue_bind(exchange=self.exch,queue=self.queue_name,routing_key='#')
+        consoleoutput("Waiting for messages matching routingkey #. To exit press CTRL+C")
 
         ### Register callback function process_message to be called when a message is received
         self.channel.basic_consume(self.process_message,queue=self.queue_name,no_ack=True)
@@ -304,9 +356,10 @@ class Spoold(multiprocessing.Process):
         f.close
         consoleoutput("AMQP message received and written to spool file %s with routingkey %s:" % (filename,method.routing_key))
         print body
-    
+
+
 ### Spawn AMQP-receiving process
-spoolinst = Spoold(options.amqpspoolpath,options.amqpserver,options.user,options.password,options.exchange,options.routingkey) 
+spoolinst = Spoold(options.amqpspoolpath,options.amqpserver,options.user,options.password,options.exchange) 
 spoolinst.start()
 
 ### Connect to IRC
@@ -332,7 +385,18 @@ while 1:
                     linenumber += 1
                     ### First line is the routingkey
                     if(linenumber==1):
-                        ircinst.ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (line,len(dirList)-1))
+                        ### DEBUG
+                        if routing_key_filter(line[0:-1]):
+                            if options.debug:
+                                consoleoutput("AMQP message allowed!")
+                                ircinst.ircprivmsg("Message with routing key %s allowed" % line[0:-1])
+                        else:
+                            if options.debug:
+                                ircinst.ircprivmsg("Message with routing key %s denied" % line[0:-1])
+                                consoleoutput("AMQP message denied!")
+                            break
+
+                        ircinst.ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (line[0:-1],len(dirList)-1))
                     else:
                         ircinst.ircprivmsg(line)
                 f.close
