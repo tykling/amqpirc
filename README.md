@@ -26,35 +26,37 @@ Example usage:
 ==============
     $ ./amqpircbot.py -h
     Usage: amqpircbot.py [options]
-
+    
     Options:
-      -h, --help            show this help message and exit
-      -H irchost, --irchost=irchost
+    -h, --help            show this help message and exit
+    -d, --debug           Set to enable debugging, output received IRC messages to console and more.
+    -H irchost, --irchost=irchost
                             The IRC server hostname or IP (default: 'irc.efnet.org')
-      -P ircport, --ircport=ircport
+    -P ircport, --ircport=ircport
                             The IRC server port (default: 6667)
-      -n nick, --ircnick=nick
+    -n nick, --ircnick=nick
                             The bots IRC nickname (default: 'amqpirc')
-      -R realname, --ircname=realname
+    -R realname, --ircname=realname
                             The bots IRC realname (default: 'amqpirc')
-      -i ident, --ircident=ident
+    -i ident, --ircident=ident
                             The bots IRC ident (default: 'amqpirc')
-      -c ircchannel, --ircchannel=ircchannel
+    -c ircchannel, --ircchannel=ircchannel
                             The IRC channel the bot should join (default: '#amqpirc')
-      -S, --ssl             Set to enable SSL connection to IRC
-      -a amqpserver, --amqphost=amqpserver
+    -S, --ssl             Set to enable SSL connection to IRC
+    -a amqpserver, --amqphost=amqpserver
                             The AMQP/RabbitMQ server hostname or IP (default: 'localhost')
-      -u user, --amqpuser=user
+    -u user, --amqpuser=user
                             The AMQP username
-      -p password, --amqppass=password
-                            The AMQP password (omit for password prompt, set to 'nopass' for no username and password)
-      -e exchange, --amqpexchange=exchange
+    -p password, --amqppass=password
+                            The AMQP password (omit for password prompt). Set to 'nopass' if user/pass should not be used
+    -e exchange, --amqpexchange=exchange
                             The AMQP exchange name (default 'myexchange')
-      -r routingkey, --routingkey=routingkey
-                            The AMQP routingkey to listen for (default '#')
-      -s amqpspoolpath, --amqpspoolpath=amqpspoolpath
+    -r routingkey, --routingkey=routingkey
+                            Comma seperated list of routingkeys to listen for. (default: '#')
+    -s amqpspoolpath, --amqpspoolpath=amqpspoolpath
                             The path of the spool folder (default: '/var/spool/amqpirc/')
-
+    -I ignore, --ignore=ignore
+                            Comma seperated list of routing keys to ignore (default: None)
 
 Example IRC command
 ===================
