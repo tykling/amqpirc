@@ -1,0 +1,16 @@
+########################################################################
+# Config example for amqpirc:
+# Use '#' to comment out stuff
+########################################################################
+
+users = {
+          # User entry example
+          {
+          nick = "tykling"              # irc nick of the user
+          host = "this.is.a.host.org"   # hostname of the user
+          usertype = "admin"            # usertype, have not been implemented yet
+          }
+
+          # Compact example
+          { nick="borgtu" host="127.0.0.1" usertype="admin" }
+        }
