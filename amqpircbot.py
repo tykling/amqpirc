@@ -19,7 +19,6 @@ import sys
 import socket
 import string
 import time
-import multiprocessing
 import getpass
 import pika
 import ssl
@@ -49,8 +48,7 @@ parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQ
 parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt). Set to 'nopass' if user/pass should not be used")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
 parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkeys to listen for in a comma seperated list. (default: '#')")
-parser.add_option("-s", "--amqpspoolpath", dest="amqpspoolpath", metavar="amqpspoolpath", default="/var/spool/amqpirc/", help="The path of the spool folder (default: '/var/spool/amqpirc/')")
-parser.add_option("-I", "--ignore", dest="ignore", metavar="ignore", default="none", help="Ignore messages where the routingkey begins with one of the keys in this comma seperated list (default: None)")
+parser.add_option("-I", "--ignore", dest="ignore", metavar="ignore", default=None, help="Ignore messages where the routingkey begins with one of the keys in this comma seperated list (default: None)")
 
 ### get options
 options, args = parser.parse_args()
@@ -69,12 +67,15 @@ if not (options.ircchannel[:1]=="#"):
 scriptdir=os.path.dirname(os.path.realpath(__file__))
 ircq = deque()
 
+### List of messages that havne't been printed to IRC
+msg_queue = list()
+
 ### Extract routing keys from options input
 filter_rules_allow = string.split(options.routingkey,",")
-if options.ignore == "none":
-    filter_rules_deny = [''] 
-else:
+if options.ignore:
     filter_rules_deny = string.split(options.ignore,",")
+else:
+    filter_rules_deny = list() 
 
 ### Create rule tables for routing_key_filter()
 for n in range(len(filter_rules_deny)):
@@ -161,26 +162,29 @@ def routing_key_filter(routing_key):
     # Checks each subkey to see if it matches the rule. If the entire rule matches (the relevant part of) the routing key the rule is validated 
     # otherwise it is not
     def validate_rules(filter_rules):
-        rule_validated = False
-        for rule in filter_rules: 
-            min_len = min(len(rule),len(subkeys))
-            for n in range(min_len):
-                ### Check if sub-key match or wildcard is used
-                if rule[n] == "#":
-                    rule_validated = True
-                    break
-                elif not rule[n] == subkeys[n]:
-                    break
+        if len(filter_rules) > 0:
+            rule_validated = False
+            for rule in filter_rules: 
+                min_len = min(len(rule),len(subkeys))
+                for n in range(min_len):
+                    ### Check if sub-key match or wildcard is used
+                    if rule[n] == "#":
+                        rule_validated = True
+                        break
+                    elif not rule[n] == subkeys[n]:
+                        break
 
-                ### Check if we're done checking (and there is an exact match)
-                if n + 1 == len(rule) and n + 1 == len(subkeys):
-                    rule_validated = True
-                    break
+                    ### Check if we're done checking (and there is an exact match)
+                    if n + 1 == len(rule) and n + 1 == len(subkeys):
+                        rule_validated = True
+                        break
 
-            ### If the rule validated the message, stop looking thorugh filter_rules_allow
-            if rule_validated:
-                break
-        return rule_validated
+                ### If the rule validated the message, stop looking thorugh filter_rules_allow
+                if rule_validated:
+                    break
+            return rule_validated
+        else:
+            return False
 
     ### split message routing key into sub-keys 
     subkeys = string.split(routing_key,".")
@@ -190,7 +194,7 @@ def routing_key_filter(routing_key):
         return False
     else:
         #first check if there are any rules in the deny table
-        if (filter_rules_deny[0] == "" and len(filter_rules_deny) == 1): 
+        if len(filter_rules_deny) == 0: 
             return True 
         #if there is, check them to see if there is a match or not
         elif validate_rules(filter_rules_deny):
@@ -219,7 +223,7 @@ def list_rules(ruletype):
         return False
 
     ircinst.ircprivmsg("Listing rules from %s-table:" % ruletype)
-    if rules[0] == "" and len(rules) == 1:
+    if len(rules) == 0:
         ircinst.ircprivmsg("No rules in table.")
     else:
         for n in range(len(rules)):
@@ -304,7 +308,7 @@ except:
 class IRCClient:
     ### Connect to IRC
     def __init__(self,irchost,ircport,ircssl):
-        self.readbuffer = ""#DET HER SKAL NOK LAVES OM. MAA FAA MRE STYR PAA KLASSER
+        self.readbuffer = ""
         self.joined = False
         self.nickcount=0
         try:
@@ -453,9 +457,8 @@ class IRCClient:
                         self.ircprivmsg("%s: unrecognized command: %s" % (sendernick,line[4]))
 
 ### AMQP-receiving and spool-writing object
-class Spoold(multiprocessing.Process):
+class Spoold:
     def __init__(self,amqpspoolpath,amqphost,user,password,exch):
-        multiprocessing.Process.__init__(self)
         self.amqpspoolpath = amqpspoolpath
         self.amqphost      = amqphost
         self.user          = user
@@ -494,72 +497,45 @@ class Spoold(multiprocessing.Process):
         self.channel.queue_bind(exchange=self.exch,queue=self.queue_name,routing_key='#')
         consoleoutput("Waiting for messages matching routingkey #. To exit press CTRL+C")
 
-        ### Register callback function process_message to be called when a message is received
-        self.channel.basic_consume(self.process_message,queue=self.queue_name,no_ack=True)
-    def run(self):
-        ### Loop waiting for messages
-        self.channel.start_consuming()
-
-    ### This function is called whenever a message is received
-    def process_message(self,ch, method, properties, body):
-        tid="%f-" % time.time()
-        fd, filename = tempfile.mkstemp(dir=self.amqpspoolpath,prefix=tid)
-        f = os.fdopen(fd, 'wt')
-        f.write(method.routing_key+'\n')
-        f.write(body)
-        f.close
-        consoleoutput("AMQP message received and written to spool file %s with routingkey %s:" % (filename,method.routing_key))
-        print body
-
+    def check_incoming(self):
+        while True:
+            method, header, body = channel.basic_get(queue=self.queue_name)
+            print "Checking for new messages...."
+            if header:
+                msg_queue.append([method.routing_key,body])
+            else:
+                break
+            
 ### Fetch userlist from config
 userlist = config_parser(fname,path)
 
 ### Spawn AMQP-receiving process
 spoolinst = Spoold(options.amqpspoolpath,options.amqpserver,options.user,options.password,options.exchange) 
-spoolinst.start()
 
 ### Connect to IRC
 ircinst = IRCClient(options.irchost,options.ircport,options.ircusessl)
 
 temp=""
 ###############################################################################
-while 1:
+while True:
     try:
         ### Handle commmands, if any
         ircinst.handlecmds(temp)
         ### check if on IRC, haven't been kicked/banned, having nick etc. If so, pass messages from spool to irc channel
         if ircinst.sanitycheck(temp):
-            ### Find all message file in the spool folder options.amqpspoolpath
-            dirList=os.listdir(options.amqpspoolpath)
+            ### check if there are any messages in queue
+            if msg_queue:
+                while len(msg_queue)>0:
+                    msg = msg_queue.pop(0)
+                    if routing_key_filter(msg[0]):
+                        if options.debug:
+                            ircinst.ircprivmsg("Routing key allowed")
+                        ircinst.ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (msg[0],len(msg_queue)))
+                        ircinst.ircprivmsg("%s" % msg[1])
+                    elif(options.debug):
+                        ircinst.ircprivmsg("Routing key denied")
 
-            ### Loop through found files in chronological order, first message first
-            for fname in sorted(dirList):
-                f = open(os.path.join(options.amqpspoolpath, fname), "r")
-                linenumber=0
-                ### Loop through lines of the found message
-                for line in f:
-                    linenumber += 1
-                    ### First line is the routingkey
-                    if(linenumber==1):
-                        ### DEBUG
-                        if routing_key_filter(line[0:-1]):
-                            if options.debug:
-                                consoleoutput("AMQP message allowed!")
-                                ircinst.ircprivmsg("Message with routing key %s allowed" % line[0:-1])
-                        else:
-                            if options.debug:
-                                ircinst.ircprivmsg("Message with routing key %s denied" % line[0:-1])
-                                consoleoutput("AMQP message denied!")
-                            break
-
-                        ircinst.ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (line[0:-1],len(dirList)-1))
-                    else:
-                        ircinst.ircprivmsg(line)
-                f.close
-                ### Delete the spool file
-                os.remove(os.path.join(options.amqpspoolpath, fname))
-                consoleoutput("AMQP message sent to IRC queue and deleted from spool file %s" % os.path.join(options.amqpspoolpath, fname))
-                break
+            spoolinst.check_incoming()
         #### otherwise try to join the channel
         else:
             ircinst.joinchannel()
