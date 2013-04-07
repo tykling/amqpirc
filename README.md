@@ -1,29 +1,42 @@
-amqpirc
-=======
+# Amqpircbot
 Python scripts that form an AMQP/RabbitMQ<>IRC proxy. AMQP messages can be output to IRC, 
 and you can send AMQP messages from IRC by sending commands to the bot.
 
-amqpirc was written by Thomas Steen Rasmussen <thomas@gibfest.dk>, the latest version
+Amqpirc was written by Thomas Steen Rasmussen <thomas@gibfest.dk>, the latest version
 can always be found on Github: https://github.com/tykling/amqpirc - pull requests are welcome.
 
-
-List of features
-================
+## List of features
 - Relay AMQP messages to IRC
 - Send messages from IRC to AMQP
+- Manage lists of routingkeys to allow/deny relaying of messages
+- Control which users have access to the bot commands
 
+# Usage
+The ircbot is started by executing amqpircbot.py (see usage below) which then connects to irc and
+spawns a process listening for amqp-messages. Recieved messages are written to, and subsequently 
+read + deleted from, a supplied path (amqpspoolpath).
+Access control to the bot can be supplied by providing a config with user credentials. If no config
+is supplied, everybody can use the bot. 
 
-Background
-==========
-amqpircbot.py is the main script, the IRC bot which connects to the specified IRC server as 
-well as the specified AMQP server. The bot will launch the amqpircspool.py and listen for messages 
-as soon as it has joined the IRC channel. You should not need to launch amqpircspool.py manually.
+## Allow/deny routingkeys
+Two tables of routingkeys control which messages are ignored/relayed to irc: A table containing allowed
+routingkeys and a table containing routingkeys to deny. The allow table is checked first and if it is
+allowed, the deny table is checked to see if there is a more specific rule denying the messages. The 
+wildcard '#' can be used to allow/deny ranges of routingkeys. E.g. the tables
 
-The IRC bot logs messages to the console when something happens.
+    Allowed routingkeys:
+        this.is
+        this.is.a.#
+    Denied routingkeys:
+        this.is.a.routingkey
 
+would allow routingkey `this.is` and all routingkeys starting with `this.is.a` except for the routingkey
+ `this.is.a.routingkey`. Default configuration is `#` in the allow table and nothing in deny table, i.e.
+all routingkeys are relayed.
 
-Example usage:
-==============
+## Command line usage example 
+For a list of command line options (and their defaults):
+
     $ ./amqpircbot.py -h
     Usage: amqpircbot.py [options]
     
@@ -43,6 +56,8 @@ Example usage:
     -c ircchannel, --ircchannel=ircchannel
                             The IRC channel the bot should join (default: '#amqpirc')
     -S, --ssl             Set to enable SSL connection to IRC
+    -C config, --config=config 
+                        The path of the config file (default:'./amqpircbot_config')
     -a amqpserver, --amqphost=amqpserver
                             The AMQP/RabbitMQ server hostname or IP (default: 'localhost')
     -u user, --amqpuser=user
@@ -58,18 +73,38 @@ Example usage:
     -I ignore, --ignore=ignore
                             Comma seperated list of routing keys to ignore (default: None)
 
-Example IRC command
-===================
+## IRC commands
+The following commands exist for amqpircbot:
+- `ping` See if the bot is alive.
+- `amqpsend <routingkey> <message body>` Sends a amqp message.
+- `listrules <table>` List routingkey rules for one of the tables. `<table>` can be "allow" or "deny". 
+- `delrule <table> <entry no.>` Delete routingkey number `<entry no.>` from `<table>`
+- `addrule <table> <routingkey>` Add the key `<routingkey>` to table `<table>`
+
+The general format for speaking to the bot is `<botnick>: <command>`.
+
+### IRC command examples
+
     22:41 <@Tykling> amqpirc: ping
     22:41 < amqpirc> Tykling: pong
     22:41 <@Tykling> amqpirc: amqpsend test.routingkey.lol message body goes here
     22:41 < amqpirc> Routingkey: test.routingkey.lol
     22:41 < amqpirc> message body goes here
 
-Todo
-====
-- ACL support for IRC so not everyone can send commands to the bot
-- Dynamically change (with IRC commands) which routingkey the bot using to listen for AMQP messages
-- Hide password somehow when launching the spool listener
+## Example config
+
+    users = { 
+              # User entry example
+              {
+              nick = "tykling"              # irc nick of the user
+              host = "this.is.a.host.org"   # hostname of the user
+              usertype = "admin"            # usertype, have not been implemented yet
+              }                                             
+    
+              # Compact example
+              { nick="borgtu" host="127.0.0.1" usertype="admin" }
+            } 
+
+# Todo
 - Check spool status through IRC commands
 - Stop/start spooler through IRC commands
