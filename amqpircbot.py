@@ -23,6 +23,8 @@ import getpass
 import pika
 import ssl
 import tempfile
+import logging
+logging.basicConfig()
 from collections import deque
 from optparse import OptionParser
 ### Define and handle command line options
@@ -47,8 +49,10 @@ parser.add_option("-a", "--amqphost", dest="amqpserver", metavar="amqpserver", d
 parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
 parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt). Set to 'nopass' if user/pass should not be used")
 parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
-parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkeys to listen for in a comma seperated list. (default: '#')")
+parser.add_option("-A", "--allow", dest="allow", metavar="allow", default="#", help="The AMQP routingkeys to allow to be sent to IRC, in a comma seperated list. (default: '#')")
 parser.add_option("-I", "--ignore", dest="ignore", metavar="ignore", default=None, help="Ignore messages where the routingkey begins with one of the keys in this comma seperated list (default: None)")
+
+parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey that the bot will receive messages from. (default: '#')")
 
 ### get options
 options, args = parser.parse_args()
@@ -67,11 +71,9 @@ if not (options.ircchannel[:1]=="#"):
 scriptdir=os.path.dirname(os.path.realpath(__file__))
 ircq = deque()
 
-### List of messages that havne't been printed to IRC
-msg_queue = list()
 
 ### Extract routing keys from options input
-filter_rules_allow = string.split(options.routingkey,",")
+filter_rules_allow = string.split(options.allow,",")
 if options.ignore:
     filter_rules_deny = string.split(options.ignore,",")
 else:
@@ -152,7 +154,7 @@ def auth_user(sendernick,hostname):
     if authed:
         return True
     else:
-        ircinst.ircprivmsg("%s: Sorry, could not find you in the user list." % sendernick)
+        ircclient.ircprivmsg("%s: Sorry, could not find you in the user list." % sendernick)
         return False
 
 ### Function to determine whether a routing-key match the deny/allow filtering rules:
@@ -222,15 +224,15 @@ def list_rules(ruletype):
     if not rules:
         return False
 
-    ircinst.ircprivmsg("Listing rules from %s-table:" % ruletype)
+    ircclient.ircprivmsg("Listing rules from %s-table:" % ruletype)
     if len(rules) == 0:
-        ircinst.ircprivmsg("No rules in table.")
+        ircclient.ircprivmsg("No rules in table.")
     else:
         for n in range(len(rules)):
             rulestr = ""
             for subkey in rules[n]:
                 rulestr = rulestr + "." + subkey
-            ircinst.ircprivmsg("Rule %s: %s" % (n,rulestr[1:]))
+            ircclient.ircprivmsg("Rule %s: %s" % (n,rulestr[1:]))
     return True
 
 ### Delete rule from one of the rule tables. Return True on success, False othwise
@@ -240,7 +242,7 @@ def del_rule(ruletype,rule_no):
         return False
     
     if ruletype == "allow" and rule_no == "0" and len(rules) == 1:
-        ircinst.ircprivmsg("Can't remove the last rule in the allow table. Use '#' wildcard in deny table for complete blocking")
+        ircclient.ircprivmsg("Can't remove the last rule in the allow table. Use '#' wildcard in deny table for complete blocking")
         return False
 
     ### Delete rule if there is a match, otherwise return false
@@ -269,48 +271,29 @@ def append_rule(ruletype,rule):
 class ReadError(Exception):
     pass
 
-### Check access to spool path options.amqpspoolpath
-if not os.access(options.amqpspoolpath, os.R_OK) or not os.access(options.amqpspoolpath, os.W_OK):
-    consoleoutput("AMQP spool path %s is not readable or writable, bailing out" % options.amqpspoolpath)
-    sys.exit(1)
-
 ###############################################################################
-
-### Connect to ampq
-if not (options.password == 'nopass'):
-    try:
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver,credentials=pika.PlainCredentials(options.user, options.password)))
-    except:
-        consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
-        sys.exit(1)
-else:
-    try:
-        connection = pika.BlockingConnection(pika.ConnectionParameters(host=options.amqpserver))
-    except:
-        consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
-        sys.exit(1)
-
-### Open AMQP channel
-try:
-    channel = connection.channel()
-except:
-    consoleoutput("Unable to open AMQP channel, error: %s" % sys.exc_info()[0])
-    sys.exit(1)
-
-### Declare exchange
-try:
-    channel.exchange_declare(exchange=options.exchange,type='topic',passive=True, durable=True, auto_delete=False)
-except:
-    consoleoutput("Unable to declare AMQP exchange, error: %s" % sys.exc_info()[0])
-    sys.exit(1)
 
 ### IRC-object: Connects to irc and reads IRC-feed from socket
 class IRCClient:
     ### Connect to IRC
     def __init__(self,irchost,ircport,ircssl):
+        self.sendernick = ""
         self.readbuffer = ""
+        self.irclinelist = list()
         self.joined = False
         self.nickcount=0
+        self.commandict = {'listrules'      : self.listrules,
+                           'amqpsend'       : self.amqpsend,
+                           'ping'           : self.ping, 
+                           'addrule'        : self.addrule,
+                           'delrule'        : self.delrule,
+                           'amqpclose'      : self.amqpclose,
+                           'amqppurgeopen'  : self.amqppurgeopen,
+                           'amqpdisconnect' : self.amqpdisconnect,
+                           'amqpopen'       : self.amqpopen,
+                           'amqpchangekey'  : self.amqpchangekey,
+                           'amqpstatus'     : self.amqpstatus}
+
         try:
             self.s=socket.socket( )
             self.s.settimeout(1)
@@ -338,21 +321,84 @@ class IRCClient:
         ### JOIN irc channel This can probably be removed
         self.joinchannel()
 
-        ### Read from the socket and prepare data for parsing 
+    ############## Command functions for IRC #################
+    ### List selected rules
+    def listrules(self,line):
+        if len(line) < 6:
+            self.ircprivmsg("What ruletype do you want me to list?")
+        else:
+            if not list_rules(line[5]):
+                self.ircprivmsg("Could not list rules, sure you gave a valid table type?")
+
+    def amqpsend(self,line):
+        ### send message from IRC to AMQP
+        routingkey=line[5]
+        amqpbody    = ' '.join(line[6:])
+        amqphandler.amqpsend(amqpbody,routingkey) 
+
+    def ping(self,line):
+        ### send PONG to IRC
+        self.ircprivmsg("%s: pong" % self.sendernick)
+
+    def addrule(self,line):
+        if not append_rule(line[5],line[6]):
+            self.ircprivmsg("Could not add rule, sure you gave a valid table type?")
+        else:
+            self.ircprivmsg("Rule succesfully added!")
+
+    def delrule(self,line):
+        if not del_rule(line[5],line[6]):
+            self.ircprivmsg("Could not list rule, sure you gave a valid table type and rule number?")
+        else:
+            self.ircprivmsg("Rule succesfully deleted!")
+
+    def amqpclose(self,line):
+        self.ircprivmsg("Closing AMQP receiver channel.")
+        amqphandler.conns[1]['channel'].close()
+        time.sleep(1)
+
+    def amqpdisconnect(self,line):
+        self.ircprivmsg("Closing AMQP receiver connection.")
+        amqphandler.conns[1]['connection'].close()
+        time.sleep(1)
+
+    def amqpopen(self,line):
+        amqphandler.conns[1]['channel'].open()
+        self.ircprivmsg("Receiving AMQP connection is now open.")
+
+    def amqpstatus(self,line):
+        if amqphandler.conns[1]['channel'].is_closed:
+            self.ircprivmsg("AMQP receiver is closed.")
+        elif amqphandler.conns[1]['channel'].is_closing:
+            self.ircprivmsg("The AMQP receiver is closing")
+        else:
+            self.ircprivmsg("AMQP receiver is open.")
+    
+    def amqppurgeopen(self,line):
+        amqphandler.conns[1]['channel'].open()
+        amqphandler.conns[1]['channel'].queue_purge(queue=amqphandler.conns[1]['queue_name'])#,nowait=True
+        self.ircprivmsg("Channel opened and queue purged.")
+
+    def amqpchangekey(self,line):
+        amqphandler.changeroutingkey(1,line[5])
+        self.ircprivmsg("Routingkey changed. ")
+
+    ########### Misc commands for IRChandling ###################
+    ### Read from the socket and prepare data for parsing 
     def readirc(self):
         buf = self.s.recv(1024)
         if not buf:
             raise ReadError("Socket disconnected ?")
-        self.readbuffer=self.readbuffer+buf
-        linelist=string.split(self.readbuffer, "\n")
-        self.readbuffer=linelist.pop( )
+        self.readbuffer  = self.readbuffer+buf
+        self.irclinelist = string.split(self.readbuffer, "\n")
+        self.readbuffer  = self.irclinelist.pop()
 
         ### Loop through the lines received from the IRC server and make list of sentences with lists of  words
-        for n in range(len(linelist)):
+        for n in range(len(self.irclinelist)):
             if(options.debug):
-                consoleoutput("<IRC: %s" % linelist[n])
-            linelist[n] = string.split(string.rstrip(linelist[n]))
-        return linelist
+                consoleoutput("<IRC: %s" % self.irclinelist[n])
+            self.irclinelist[n] = string.split(string.rstrip(self.irclinelist[n]))
+        self.irclinelist
 
     ### Function to send PRIVMSG message to IRC
     def ircprivmsg(self,message,target=options.ircchannel):
@@ -370,7 +416,7 @@ class IRCClient:
     def queuesend(self):
         if(len(ircq)>0):
             try:
-                ircinst.s.send(ircq.popleft())
+                ircclient.s.send(ircq.popleft())
             except Exception as e:
                 consoleoutput("Socket exception sending to IRC, type: %s exception message: %s" % (str(type(e)),e.strerror))
                 sys.exit(1)
@@ -383,8 +429,8 @@ class IRCClient:
         consoleoutput("Setting IRC nickname %s" % nick)
         self.ircsend("NICK %s" % nick)
 
-    def sanitycheck(self,ircfeed):
-        for line in ircfeed:
+    def sanitycheck(self):
+        for line in self.irclinelist:
             ### Handle PING
             if(line[0]=="PING"):
                 self.ircsend("PONG %s" % line[1])
@@ -418,139 +464,138 @@ class IRCClient:
         return self.joined
 
     ### Handle commands for the bot
-    def handlecmds(self,ircfeed):
-        for line in ircfeed: 
+    def handlecmds(self):
+        for line in self.irclinelist: 
             if(line[1]=="PRIVMSG" and line[2]==options.ircchannel and line[3]==":%s:" % options.nick):
                 fullcommand=" ".join(line[4:])
-                sendernick=line[0][1:].partition("!")[0]
-                consoleoutput("IRC command from %s received: %s" % (sendernick,fullcommand))
+                self.sendernick=line[0][1:].partition("!")[0]
+                consoleoutput("IRC command from %s received: %s" % (self.sendernick,fullcommand))
                 hostname = line[0].partition("@")[2]
                 consoleoutput(hostname)
-                if auth_user(sendernick,hostname):
-                    if(line[4]=="amqpsend"):
-                        ### send message from IRC to AMQP
-                        routingkey=line[5]
-                        amqpbody=' '.join(line[6:])
-                        properties=pika.BasicProperties(delivery_mode=2)
-                        channel.basic_publish(exchange=options.exchange,routing_key=routingkey,body=amqpbody,properties=properties)
-                    elif(line[4]=="ping"):
-                        ### send PONG to IRC
-                        self.ircprivmsg("%s: pong" % sendernick)
-                        ### List selected rules
-                    elif(line[4]=="listrules"):
-                        if len(line) < 6:
-                            self.ircprivmsg("What ruletype do you want me to list?")
-                        else:
-                            if not list_rules(line[5]):
-                                self.ircprivmsg("Could not list rules, sure you gave a valid table type?")
-                    elif(line[4]=="addrule"):
-                        if not append_rule(line[5],line[6]):
-                            self.ircprivmsg("Could not add rule, sure you gave a valid table type?")
-                        else:
-                            self.ircprivmsg("Rule succesfully added!")
-                    elif(line[4]=="delrule"):
-                        if not del_rule(line[5],line[6]):
-                            self.ircprivmsg("Could not list rule, sure you gave a valid table type and rule number?")
-                        else:
-                            self.ircprivmsg("Rule succesfully deleted!")
+                if auth_user(self.sendernick,hostname):
+                    if line[4] in self.commandict:
+                        self.commandict[line[4]](line)
                     else:
-                        self.ircprivmsg("%s: unrecognized command: %s" % (sendernick,line[4]))
+                        self.ircprivmsg("%s: unrecognized command: %s" % (self.sendernick,line[4]))
 
-### AMQP-receiving and spool-writing object
-class Spoold:
-    def __init__(self,amqpspoolpath,amqphost,user,password,exch):
-        self.amqpspoolpath = amqpspoolpath
+    ######### Misc commands for AMQPhandling ###################
+    def ircsend_receivedmsg(self):
+        amqphandler.check_incoming()
+        if amqphandler.msg_queue:
+            while len(amqphandler.msg_queue)>0:
+                msg = amqphandler.msg_queue.pop(0)
+                if routing_key_filter(msg[0]):
+                    if options.debug:
+                        self.ircprivmsg("Routing key allowed")
+                    self.ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (msg[0],len(amqphandler.msg_queue)))
+                    self.ircprivmsg("%s" % msg[1])
+                elif(options.debug):
+                    self.ircprivmsg("Routing key denied")
+
+### AMQP-receiving class 
+class AMQPhandler:
+    def create_connection(self,n):
+        try:
+            ### Connect to ampq and open channel
+            if (self.password == 'nopass'):
+                self.conns[n]['connection'] = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost))
+            else:
+                self.conns[n]['connection'] = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost,credentials=pika.PlainCredentials(self.user, self.password)))
+        except:
+            consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
+            sys.exit(1)
+
+    def create_channel(self,n):
+        try:
+            self.conns[n]['channel'] = self.conns[n]['connection'].channel()
+        except:
+            consoleoutput("Unable to open channel, error: %s" % sys.exc_info()[0])
+            sys.exit(1)
+
+    def declare_exchange(self,n):
+        ### Declare exchange
+        self.conns[n]['channel'].exchange_declare(exchange=self.exch,type='topic')#, durable=True, auto_delete=False)#passive=True
+
+    def declare_queueANDbind(self,n):
+        ### Declare queue and get unique queuename
+        self.conns[n]['result']     = self.conns[n]['channel'].queue_declare(exclusive=True)
+        self.conns[n]['queue_name'] = self.conns[n]['result'].method.queue
+        self.conns[n]['channel'].queue_bind(exchange=self.exch,queue=self.conns[n]['queue_name'],routing_key=self.routingkey)
+                       
+    def changeroutingkey(self,n,rkey):
+        self.conns[n]['channel'].queue_unbind(exchange=options.exchange,routing_key=self.routingkey,queue=self.conns[n]['queue_name'])
+        self.conns[n]['channel'].queue_bind(exchange=self.exch,queue=self.conns[n]['queue_name'],routing_key=rkey)
+        self.routingkey = rkey
+
+    def amqpsend(self,amqpbody,routingkey):
+        self.conns[0]['channel'].basic_publish(exchange=options.exchange,routing_key=self.routingkey,body=amqpbody,properties=self.properties)
+
+    def __init__(self,amqphost,user,password,exch,routingkey):
         self.amqphost      = amqphost
         self.user          = user
         self.password      = password
         self.exch          = exch
+        self.routingkey    = routingkey
+        self.conns         = [dict(),dict()]
+        self.properties    = pika.BasicProperties(delivery_mode=2)
+        ### List of messages that havne't been printed to IRC
+        self.msg_queue     = list()
 
-        ### Connect to ampq and open channel
-        if not (self.password == 'nopass'):
-            try:
-                self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost,credentials=pika.PlainCredentials(self.user, self.password)))
-                self.channel = connection.channel()
-            except:
-                consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
-                sys.exit(1)
-        else:
-            try:
-                consoleoutput("POOLP %s HOST %s USER %s PASS %s EXCH %s" % (self.amqpspoolpath,self.amqphost,self.user,self.password,self.exch))
-                self.connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost))
-                self.channel = connection.channel()
-            except:
-                consoleoutput("Unable to connect to AMQP and open channel, error: %s" % sys.exc_info()[0])
-                sys.exit(1)
+        ### create sending connection w. channel and exchange
+        self.create_connection(0)
+        self.create_channel(0)
+        self.declare_exchange(0)
 
-        ### Check access to spool path options.amqpspoolpath
-        if not os.access(self.amqpspoolpath, os.R_OK) or not os.access(self.amqpspoolpath, os.W_OK):
-            consoleoutput("Spool path %s is not readable or writable, bailing out" % amqpspoolpath)
-            sys.exit(1)
+        ### create receiving connection w. channel, exchange and queue
+        self.create_connection(1)
+        self.create_channel(1)
+        self.declare_exchange(1)
+        self.declare_queueANDbind(1)
 
-        ### Declare exchange
-        self.channel.exchange_declare(exchange=self.exch,type='topic',passive=True, durable=True, auto_delete=False)
-
-        ### Declare queue and get unique queuename
-        self.result = channel.queue_declare(exclusive=True)
-        self.queue_name = self.result.method.queue
-        ### Bind queue to exchange with the wildcard routing key #
-        self.channel.queue_bind(exchange=self.exch,queue=self.queue_name,routing_key='#')
-        consoleoutput("Waiting for messages matching routingkey #. To exit press CTRL+C")
 
     def check_incoming(self):
-        while True:
-            method, header, body = channel.basic_get(queue=self.queue_name)
+        if self.conns[1]['channel'].is_open:
             print "Checking for new messages...."
-            if header:
-                msg_queue.append([method.routing_key,body])
-            else:
-                break
-            
-### Fetch userlist from config
-userlist = config_parser(fname,path)
+            while True:
+                method, header, body = self.conns[1]['channel'].basic_get(queue=self.conns[1]['queue_name'],no_ack=True)
+                if header:
+                    self.msg_queue.append([method.routing_key,body])
+                else:
+                    break
 
-### Spawn AMQP-receiving process
-spoolinst = Spoold(options.amqpspoolpath,options.amqpserver,options.user,options.password,options.exchange) 
-
-### Connect to IRC
-ircinst = IRCClient(options.irchost,options.ircport,options.ircusessl)
-
-temp=""
 ###############################################################################
+
+### Fetch userlist from config
+userlist    = config_parser(fname,path)
+
+### Spawn AMQP object
+amqphandler = AMQPhandler(options.amqpserver,options.user,options.password,options.exchange,options.routingkey) 
+
+### Spawn IRC object
+ircclient   = IRCClient(options.irchost,options.ircport,options.ircusessl)
+
 while True:
     try:
         ### Handle commmands, if any
-        ircinst.handlecmds(temp)
+        ircclient.handlecmds()
         ### check if on IRC, haven't been kicked/banned, having nick etc. If so, pass messages from spool to irc channel
-        if ircinst.sanitycheck(temp):
-            ### check if there are any messages in queue
-            if msg_queue:
-                while len(msg_queue)>0:
-                    msg = msg_queue.pop(0)
-                    if routing_key_filter(msg[0]):
-                        if options.debug:
-                            ircinst.ircprivmsg("Routing key allowed")
-                        ircinst.ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (msg[0],len(msg_queue)))
-                        ircinst.ircprivmsg("%s" % msg[1])
-                    elif(options.debug):
-                        ircinst.ircprivmsg("Routing key denied")
-
-            spoolinst.check_incoming()
+        if ircclient.sanitycheck():
+            ### check if there are any messages in queue and if so, send them
+            ircclient.ircsend_receivedmsg()
         #### otherwise try to join the channel
         else:
-            ircinst.joinchannel()
-
-        ### after irc-feed have been processed it is erased
-        temp = ""
+            ircclient.joinchannel()
 
         ### Try reading data from the IRC socket, timeout is 1 second, 
         ### If there is no data to read, an exception is raised and the loop continues
-        temp = ircinst.readirc()
+        ircclient.irclinelist = ""
+        ircclient.readirc()
 
     ### Allow control-c to exit the script
     except (KeyboardInterrupt):
+        ircclient.ircprivmsg("I'm afraid. I'm afraid, Dave. Dave, my mind is going. I can feel it.")
+        ircclient.queuesend()
         consoleoutput("control-c received, exiting")
-        spoolinst.terminate()
         sys.exit(0)
     
     ### socket read error exception (disconnected from IRC)
@@ -562,7 +607,7 @@ while True:
     except ssl.SSLError as e:
         if(e.message=="The read operation timed out"):
             ### Send a line to IRC if any are waiting in the queue to be sent...
-            ircinst.queuesend()
+            ircclient.queuesend()
             continue
         else:
             ### raise any other exception
@@ -571,7 +616,7 @@ while True:
     ### Continue the loop after socket timeout error (happens if we didn't receive any data before timeout)
     except socket.timeout as e:
         ### Send a line to IRC if any are waiting in the queue to be sent...
-        ircinst.queuesend()
+        ircclient.queuesend()
         continue
 
     ### Catch sys.exit from earlier in the script
