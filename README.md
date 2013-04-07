@@ -1,4 +1,7 @@
 # Amqpircbot
+__NB! This readme is obsolete. The commands should work, but a lot of new features have been added.__
+__The readme will be updated when all the planned new features have been added.__
+
 Python scripts that form an AMQP/RabbitMQ<>IRC proxy. AMQP messages can be output to IRC, 
 and you can send AMQP messages from IRC by sending commands to the bot.
 
