@@ -108,6 +108,3 @@ The general format for speaking to the bot is `<botnick>: <command>`.
               { nick="borgtu" host="127.0.0.1" usertype="admin" }
             } 
 
-# Todo
-- Check spool status through IRC commands
-- Stop/start spooler through IRC commands
