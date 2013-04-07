@@ -21,6 +21,7 @@ import string
 import time
 import getpass
 import pika
+import json
 import ssl
 import tempfile
 import logging
@@ -71,7 +72,6 @@ if not (options.ircchannel[:1]=="#"):
 scriptdir=os.path.dirname(os.path.realpath(__file__))
 ircq = deque()
 
-
 ### Extract routing keys from options input
 filter_rules_allow = string.split(options.allow,",")
 if options.ignore:
@@ -98,64 +98,20 @@ else:
     fname = options.config
     path  = "./"
 
-### Class that defines the different config properties
-class User:
-    def __init__(self,nick=None,host=None,usertype=None):
-        self.nick     = nick
-        self.host     = host
-        self.usertype = usertype
-        self.proplist = ['nick','host','usertype']
-
-### Function to extract the values of the cfg object string 
-def extract_prop(cfg_obj):
-    user = User()
-    for prop in user.proplist:
-        idx_start = cfg_obj.find(prop + "=\"") + len(prop + "=\"")
-        idx_end   = cfg_obj[idx_start:].find("\"") + idx_start + 1
-        propval   = cfg_obj[idx_start:idx_end-1] 
-        add_prop  = "user." + prop + "=\"" + propval + "\""    
-        exec add_prop
-    return user
-
 def config_parser(fname,path):
-    cfg_f  = open(os.path.join(path, fname), "r")
-
-    ### Adjoin the lines and remove: linebreaks, comments and white spaces.
-    cfgstr = "" 
-    for line in cfg_f:
-        n = line.find("#")
-        if  n==1:
-            continue
-        elif n==-1:
-            line.replace("\n","")
-            cfgstr = cfgstr + line
-        else:
-            line = line[:n]
-            line.replace("\n","")
-            cfgstr = cfgstr + line
-    cfgstr  = cfgstr.replace(" ","")
-    
-    ### create list of objects from cfg
-    cfglist = cfgstr.split("{")
-
-    ### fetch the properties defined in the proplist
-    ### since we have "nick={{" the first two entries can be discarded
-    userlist = list()
-    for n in range(2,len(cfglist)):
-        ### removes the "}" in the end
-        userlist.append(extract_prop(cfglist[n]))
+    cfg_f    = open(os.path.join(path, fname), "r")
+    jsonblob = json.load(cfg_f)
+    userlist = jsonblob['users']
     return userlist        
 
 def auth_user(sendernick,hostname):
     authed = False
-    for n in range(len(userlist)):
-        if userlist[n].host == hostname and userlist[n].nick == sendernick:
-            authed = True
-    if authed:
-        return True
-    else:
-        ircclient.ircprivmsg("%s: Sorry, could not find you in the user list." % sendernick)
-        return False
+    for user in userlist:
+        if user['host'] == hostname and user['nick'] == sendernick:
+            return True
+
+    ircclient.ircprivmsg("%s: Sorry, could not find you in the user list." % sendernick)
+    return False
 
 ### Function to determine whether a routing-key match the deny/allow filtering rules:
 ### First it determines if the message is in the allow-list, if it is, it checks whether it is in the deny list
