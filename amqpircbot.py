@@ -73,11 +73,14 @@ scriptdir=os.path.dirname(os.path.realpath(__file__))
 ircq = deque()
 
 ### Extract routing keys from options input
-filter_rules_allow = string.split(options.allow,",")
+filter_rules_allow    = string.split(options.allow,",")
 if options.ignore:
     filter_rules_deny = string.split(options.ignore,",")
 else:
     filter_rules_deny = list() 
+
+### declare user list
+userlist = list()
 
 ### Create rule tables for routing_key_filter()
 for n in range(len(filter_rules_deny)):
@@ -98,64 +101,114 @@ else:
     fname = options.config
     path  = "./"
 
+class StrFormatRules:
+    def __init__(self):
+        self.rkeylist  = list()
+        self.formatstr = ""
+
+
+tabletypes   = dict()
 def config_parser(fname,path):
-    cfg_f    = open(os.path.join(path, fname), "r")
-    jsonblob = json.load(cfg_f)
-    userlist = jsonblob['users']
-    return userlist        
+    filtertables = {  'allow'   : filter_rules_allow,
+                       'deny'   : filter_rules_deny }
+
+    cfg_f      = open(os.path.join(path, fname), "r")
+    ### Adjoin the lines and remove: linebreaks, comments and white spaces.
+    cfgstr = ""
+    for line in cfg_f:
+        n = line.find("%")
+        if n==1:
+            continue
+        elif n==-1:
+            line.replace("\n","")
+            cfgstr = cfgstr + line
+        else:
+            line = line[:n] +"\n"
+            line.replace("\n","")
+            cfgstr = cfgstr + line
+
+    cfgstr = cfgstr.replace(" ","")
+
+    jsonblob   = json.loads(cfgstr)
+    if 'users' in jsonblob:
+        userlist.extend(jsonblob['users'])
+
+    ## adjoins the tables->routingkeys to the appropriate tables (i.e. might have values of commandline arguments)
+    if 'tables' in jsonblob:
+        for tentry in jsonblob['tables']:
+            key = tentry['name']
+            if key not in tabletypes and key not in filtertables:
+                x = StrFormatRules()
+                tabletypes.update( {key : x } ) 
+
+            rkeys = tentry['rkeys'].split(",")
+            for n in range(len(rkeys)):
+                rkeys[n] = rkeys[n].split(".")
+
+            if key in filtertables:
+                filtertables[key].extend(rkeys)
+            else:
+                tabletypes[key].rkeylist.extend(rkeys)
+                tabletypes[key].formatstr = tentry['start'] + ' %s ' + tentry['end']
 
 def auth_user(sendernick,hostname):
     authed = False
     for user in userlist:
+        print user['host']+user['nick']+sendernick+hostname
         if user['host'] == hostname and user['nick'] == sendernick:
             return True
-
     ircclient.ircprivmsg("%s: Sorry, could not find you in the user list." % sendernick)
     return False
+
+# Checks each subkey to see if it matches the rule. If the entire rule matches (the relevant part of) the routing key the rule is validated 
+# otherwise it is not
+def validate_rules(filter_rules,routing_key):
+    if len(filter_rules) > 0:
+        rule_validated = False
+        for rule in filter_rules: 
+            min_len = min(len(rule),len(routing_key))
+            for n in range(min_len):
+                ### Check if sub-key match or wildcard is used
+                if rule[n] == "#":
+                    rule_validated = True
+                    break
+                elif not rule[n] == routing_key[n]:
+                    break
+
+                ### Check if we're done checking (and there is an exact match)
+                if n + 1 == len(rule) and n + 1 == len(routing_key):
+                    rule_validated = True
+                    break
+
+            ### If the rule validated the message, stop looking thorugh filter_rules_allow
+            if rule_validated:
+                break
+        return rule_validated
+    else:
+        return False
+
+### Function to format the message, if it is found in some of the formatting-tables
+def string_formatting(routingkey,text):
+    routingkey = routingkey.split(".")
+    for key in tabletypes:
+        #this validates to false
+        if validate_rules(tabletypes[key].rkeylist,routingkey):
+            return (tabletypes[key].formatstr % text).decode('string-escape')
+    return text 
 
 ### Function to determine whether a routing-key match the deny/allow filtering rules:
 ### First it determines if the message is in the allow-list, if it is, it checks whether it is in the deny list
 ### Returns True if the message is relevant and False if it should be discarded 
 def routing_key_filter(routing_key):
-    # Checks each subkey to see if it matches the rule. If the entire rule matches (the relevant part of) the routing key the rule is validated 
-    # otherwise it is not
-    def validate_rules(filter_rules):
-        if len(filter_rules) > 0:
-            rule_validated = False
-            for rule in filter_rules: 
-                min_len = min(len(rule),len(subkeys))
-                for n in range(min_len):
-                    ### Check if sub-key match or wildcard is used
-                    if rule[n] == "#":
-                        rule_validated = True
-                        break
-                    elif not rule[n] == subkeys[n]:
-                        break
-
-                    ### Check if we're done checking (and there is an exact match)
-                    if n + 1 == len(rule) and n + 1 == len(subkeys):
-                        rule_validated = True
-                        break
-
-                ### If the rule validated the message, stop looking thorugh filter_rules_allow
-                if rule_validated:
-                    break
-            return rule_validated
-        else:
-            return False
-
-    ### split message routing key into sub-keys 
-    subkeys = string.split(routing_key,".")
-
     ### If the the routingkey is in filter_rules_allow see if it is in the ignore list. If so, return false otherwise return true
-    if not validate_rules(filter_rules_allow):
+    if not validate_rules(filter_rules_allow,routing_key):
         return False
     else:
         #first check if there are any rules in the deny table
         if len(filter_rules_deny) == 0: 
             return True 
         #if there is, check them to see if there is a match or not
-        elif validate_rules(filter_rules_deny):
+        elif validate_rules(filter_rules_deny,routing_key):
             return False
         else:
             return True
@@ -175,20 +228,20 @@ def find_table_type(ruletype):
     return rules
 
 ### List rules on irc. Returns True if success, False if failing
-def list_rules(ruletype):
+def list_rules(ruletype,target):
     rules = find_table_type(ruletype)
     if not rules:
         return False
 
-    ircclient.ircprivmsg("Listing rules from %s-table:" % ruletype)
+    ircclient.ircprivmsg("Listing rules from %s-table:" % ruletype,target)
     if len(rules) == 0:
-        ircclient.ircprivmsg("No rules in table.")
+        ircclient.ircprivmsg("No rules in table.",target)
     else:
         for n in range(len(rules)):
             rulestr = ""
             for subkey in rules[n]:
                 rulestr = rulestr + "." + subkey
-            ircclient.ircprivmsg("Rule %s: %s" % (n,rulestr[1:]))
+            ircclient.ircprivmsg("Rule %s: %s" % (n,rulestr[1:]),target)
     return True
 
 ### Delete rule from one of the rule tables. Return True on success, False othwise
@@ -217,7 +270,6 @@ def append_rule(ruletype,rule):
     rules = find_table_type(ruletype)
     if not rules:
         return False
-
     ### append rule
     rule = string.split(rule,".")
     rules.append(rule)
@@ -279,65 +331,65 @@ class IRCClient:
 
     ############## Command functions for IRC #################
     ### List selected rules
-    def listrules(self,line):
+    def listrules(self,line,target):
         if len(line) < 6:
-            self.ircprivmsg("What ruletype do you want me to list?")
+            self.ircprivmsg("What ruletype do you want me to list?",target)
         else:
-            if not list_rules(line[5]):
-                self.ircprivmsg("Could not list rules, sure you gave a valid table type?")
+            if not list_rules(line[5],target):
+                self.ircprivmsg("Could not list rules, sure you gave a valid table type?",target)
 
-    def amqpsend(self,line):
+    def amqpsend(self,line,target):
         ### send message from IRC to AMQP
         routingkey=line[5]
         amqpbody    = ' '.join(line[6:])
         amqphandler.amqpsend(amqpbody,routingkey) 
 
-    def ping(self,line):
+    def ping(self,line,target):
         ### send PONG to IRC
-        self.ircprivmsg("%s: pong" % self.sendernick)
+        self.ircprivmsg("%s: pong" % self.sendernick,target)
 
-    def addrule(self,line):
+    def addrule(self,line,target):
         if not append_rule(line[5],line[6]):
-            self.ircprivmsg("Could not add rule, sure you gave a valid table type?")
+            self.ircprivmsg("Could not add rule, sure you gave a valid table type?",target)
         else:
-            self.ircprivmsg("Rule succesfully added!")
+            self.ircprivmsg("Rule succesfully added!",target)
 
-    def delrule(self,line):
+    def delrule(self,line,target):
         if not del_rule(line[5],line[6]):
-            self.ircprivmsg("Could not list rule, sure you gave a valid table type and rule number?")
+            self.ircprivmsg("Could not list rule, sure you gave a valid table type and rule number?",target)
         else:
-            self.ircprivmsg("Rule succesfully deleted!")
+            self.ircprivmsg("Rule succesfully deleted!"),target
 
-    def amqpclose(self,line):
-        self.ircprivmsg("Closing AMQP receiver channel.")
-        amqphandler.conns[1]['channel'].close()
+    def amqpclose(self,line,target):
+        self.ircprivmsg("Closing AMQP receiver channel.",target)
+        amqphandler.chanlist[1].channel.close()
         time.sleep(1)
 
-    def amqpdisconnect(self,line):
-        self.ircprivmsg("Closing AMQP receiver connection.")
-        amqphandler.conns[1]['connection'].close()
+    def amqpdisconnect(self,line,target):
+        self.ircprivmsg("Closing AMQP connection.",target)
+        amqphandler.conn.close()
         time.sleep(1)
 
-    def amqpopen(self,line):
-        amqphandler.conns[1]['channel'].open()
-        self.ircprivmsg("Receiving AMQP connection is now open.")
+    def amqpopen(self,line,target):
+        amqphandler.chanlist[1].channel.open()
+        self.ircprivmsg("Receiving AMQP channel is now open.",target)
 
-    def amqpstatus(self,line):
-        if amqphandler.conns[1]['channel'].is_closed:
-            self.ircprivmsg("AMQP receiver is closed.")
-        elif amqphandler.conns[1]['channel'].is_closing:
-            self.ircprivmsg("The AMQP receiver is closing")
+    def amqpstatus(self,line,target):
+        if amqphandler.chanlist[1].channel.is_closed:
+            self.ircprivmsg("AMQP receiver is closed.",target)
+        elif amqphandler.chanlist[1].channel.is_closing:
+            self.ircprivmsg("The AMQP receiver is closing",target)
         else:
-            self.ircprivmsg("AMQP receiver is open.")
+            self.ircprivmsg("AMQP receiver is open.",target)
     
-    def amqppurgeopen(self,line):
-        amqphandler.conns[1]['channel'].open()
-        amqphandler.conns[1]['channel'].queue_purge(queue=amqphandler.conns[1]['queue_name'])#,nowait=True
-        self.ircprivmsg("Channel opened and queue purged.")
+    def amqppurgeopen(self,line,target):
+        amqphandler.chanlist[1].channel.open()
+        amqphandler.chanlist[1].channel.queue_purge(queue=amqphandler.chanlist[1].queue_name)#,nowait=True
+        self.ircprivmsg("Channel opened and queue purged.",target)
 
-    def amqpchangekey(self,line):
+    def amqpchangekey(self,line,target):
         amqphandler.changeroutingkey(1,line[5])
-        self.ircprivmsg("Routingkey changed. ")
+        self.ircprivmsg("Routingkey changed. ",target)
 
     ########### Misc commands for IRChandling ###################
     ### Read from the socket and prepare data for parsing 
@@ -358,6 +410,8 @@ class IRCClient:
 
     ### Function to send PRIVMSG message to IRC
     def ircprivmsg(self,message,target=options.ircchannel):
+        if not target:
+            target=options.ircchannel
         self.ircsend("PRIVMSG %s :%s" % (target,message))
 
     ### Function to send message on the IRC socket (adds \r\n to the message)
@@ -422,17 +476,27 @@ class IRCClient:
     ### Handle commands for the bot
     def handlecmds(self):
         for line in self.irclinelist: 
-            if(line[1]=="PRIVMSG" and line[2]==options.ircchannel and line[3]==":%s:" % options.nick):
+            target = True
+            if(line[1]=="PRIVMSG"):
+                if (line[2]==options.ircchannel and line[3]==":%s:" % options.nick):
+                    target = False
+                elif (line[2]==options.nick):
+                    line.insert(3,None)
+                    line[4] = line[4][1:]
+                else:
+                    continue
+
                 fullcommand=" ".join(line[4:])
                 self.sendernick=line[0][1:].partition("!")[0]
+                if target:
+                    target = self.sendernick
                 consoleoutput("IRC command from %s received: %s" % (self.sendernick,fullcommand))
                 hostname = line[0].partition("@")[2]
-                consoleoutput(hostname)
                 if auth_user(self.sendernick,hostname):
                     if line[4] in self.commandict:
-                        self.commandict[line[4]](line)
+                        self.commandict[line[4]](line,target)
                     else:
-                        self.ircprivmsg("%s: unrecognized command: %s" % (self.sendernick,line[4]))
+                        self.ircprivmsg("%s: unrecognized command: %s" % (self.sendernick,line[4]),target)
 
     ######### Misc commands for AMQPhandling ###################
     def ircsend_receivedmsg(self):
@@ -441,12 +505,22 @@ class IRCClient:
             while len(amqphandler.msg_queue)>0:
                 msg = amqphandler.msg_queue.pop(0)
                 if routing_key_filter(msg[0]):
+                    # format routingkey irc line
+                    text = "Routingkey: %s " % msg[0]
+                    msg_status = "(%s messages in bot queue)" % len(amqphandler.msg_queue)
+                    msg[0] = string_formatting(msg[0],text) + msg_status
                     if options.debug:
                         self.ircprivmsg("Routing key allowed")
-                    self.ircprivmsg("Routingkey: %s (%s messages in bot queue)" % (msg[0],len(amqphandler.msg_queue)))
+                    self.ircprivmsg(msg[0])
                     self.ircprivmsg("%s" % msg[1])
                 elif(options.debug):
                     self.ircprivmsg("Routing key denied")
+
+class AMQPChannel:
+    def __init(self):
+        self.result = None
+        self.queue_name = None
+        self.channel    = None
 
 ### AMQP-receiving class 
 class AMQPhandler:
@@ -454,37 +528,38 @@ class AMQPhandler:
         try:
             ### Connect to ampq and open channel
             if (self.password == 'nopass'):
-                self.conns[n]['connection'] = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost))
+                self.conn = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost))
             else:
-                self.conns[n]['connection'] = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost,credentials=pika.PlainCredentials(self.user, self.password)))
+                self.conn = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost,credentials=pika.PlainCredentials(self.user, self.password)))
         except:
             consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
             sys.exit(1)
 
     def create_channel(self,n):
         try:
-            self.conns[n]['channel'] = self.conns[n]['connection'].channel()
+            self.chanlist.append(AMQPChannel())
+            self.chanlist[-1].channel = self.conn.channel()
         except:
             consoleoutput("Unable to open channel, error: %s" % sys.exc_info()[0])
             sys.exit(1)
 
     def declare_exchange(self,n):
         ### Declare exchange
-        self.conns[n]['channel'].exchange_declare(exchange=self.exch,type='topic')#, durable=True, auto_delete=False)#passive=True
+        self.chanlist[n].channel.exchange_declare(exchange=self.exch,type='topic')#, durable=True, auto_delete=False)#passive=True
 
     def declare_queueANDbind(self,n):
         ### Declare queue and get unique queuename
-        self.conns[n]['result']     = self.conns[n]['channel'].queue_declare(exclusive=True)
-        self.conns[n]['queue_name'] = self.conns[n]['result'].method.queue
-        self.conns[n]['channel'].queue_bind(exchange=self.exch,queue=self.conns[n]['queue_name'],routing_key=self.routingkey)
+        self.chanlist[n].result     = self.chanlist[n].channel.queue_declare(exclusive=True)
+        self.chanlist[n].queue_name = self.chanlist[n].result.method.queue
+        self.chanlist[n].channel.queue_bind(exchange=self.exch,queue=self.chanlist[n].queue_name,routing_key=self.routingkey)
                        
     def changeroutingkey(self,n,rkey):
-        self.conns[n]['channel'].queue_unbind(exchange=options.exchange,routing_key=self.routingkey,queue=self.conns[n]['queue_name'])
-        self.conns[n]['channel'].queue_bind(exchange=self.exch,queue=self.conns[n]['queue_name'],routing_key=rkey)
+        self.chanlist[n].queue_unbind(exchange=options.exchange,routing_key=self.routingkey,queue=self.chanlist[n].queue_name)
+        self.chanlist[n].queue_bind(exchange=self.exch,queue=self.chanlist[n].queue_name,routing_key=rkey)
         self.routingkey = rkey
 
     def amqpsend(self,amqpbody,routingkey):
-        self.conns[0]['channel'].basic_publish(exchange=options.exchange,routing_key=self.routingkey,body=amqpbody,properties=self.properties)
+        self.conn[0].channel.basic_publish(exchange=options.exchange,routing_key=self.routingkey,body=amqpbody,properties=self.properties)
 
     def __init__(self,amqphost,user,password,exch,routingkey):
         self.amqphost      = amqphost
@@ -492,7 +567,8 @@ class AMQPhandler:
         self.password      = password
         self.exch          = exch
         self.routingkey    = routingkey
-        self.conns         = [dict(),dict()]
+        self.conn          = None
+        self.chanlist      = list();
         self.properties    = pika.BasicProperties(delivery_mode=2)
         ### List of messages that havne't been printed to IRC
         self.msg_queue     = list()
@@ -503,17 +579,15 @@ class AMQPhandler:
         self.declare_exchange(0)
 
         ### create receiving connection w. channel, exchange and queue
-        self.create_connection(1)
         self.create_channel(1)
         self.declare_exchange(1)
         self.declare_queueANDbind(1)
 
 
     def check_incoming(self):
-        if self.conns[1]['channel'].is_open:
-            print "Checking for new messages...."
+        if self.chanlist[1].channel.is_open:
             while True:
-                method, header, body = self.conns[1]['channel'].basic_get(queue=self.conns[1]['queue_name'],no_ack=True)
+                method, header, body = self.chanlist[1].channel.basic_get(queue=self.chanlist[1].queue_name,no_ack=True)
                 if header:
                     self.msg_queue.append([method.routing_key,body])
                 else:
@@ -522,7 +596,7 @@ class AMQPhandler:
 ###############################################################################
 
 ### Fetch userlist from config
-userlist    = config_parser(fname,path)
+config_parser(fname,path)
 
 ### Spawn AMQP object
 amqphandler = AMQPhandler(options.amqpserver,options.user,options.password,options.exchange,options.routingkey) 
@@ -578,8 +652,3 @@ while True:
     ### Catch sys.exit from earlier in the script
     except SystemExit:
         os._exit(0)
-
-    ### Catch other exceptions
-    except Exception as e:
-        consoleoutput("uncaught exception type: %s exception message: %s" % (str(type(e)),e.message))
-        sys.exit(1)
