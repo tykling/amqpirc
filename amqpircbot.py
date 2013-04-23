@@ -88,9 +88,10 @@ class AMQPBotConfig:
         for n in range(len(self.filter_rules_allow)):
             self.filter_rules_allow[n] = string.split(self.filter_rules_allow[n],".")
 
-        self.filtertables     =  { 'allow' : self.filter_rules_allow,
-                                   'deny'  : self.filter_rules_deny }
-        self.formattingtables = dict()
+        self.filtertables      =  { 'allow' : self.filter_rules_allow,
+                                    'deny'  : self.filter_rules_deny }
+        self.formattingtables  = dict()
+        self.defaultformatting = "Routingkey: %s "
         ### Extract config name and path from commandline input and parse config from file
         idx = options.config.rfind('/')
         if idx > -1:
@@ -104,7 +105,7 @@ class AMQPBotConfig:
     ### config that parses json config file
     def config_parser(self,fname,path):
         cfg_f      = open(os.path.join(path, fname), "r")
-        ### Adjoin the lines and remove: linebreaks, comments and white spaces.
+        ### Adjoin the lines and remove: linebreaks, comments 
         cfgstr = ""
         for line in cfg_f:
             n = line.find("%")
@@ -117,7 +118,6 @@ class AMQPBotConfig:
                 line = line[:n] +"\n"
                 line.replace("\n","")
                 cfgstr = cfgstr + line
-        cfgstr = cfgstr.replace(" ","")
         jsonblob   = json.loads(cfgstr)
         if 'users' in jsonblob:
             self.userlist.extend(jsonblob['users'])
@@ -129,6 +129,9 @@ class AMQPBotConfig:
         if 'tables' in jsonblob:
             for tentry in jsonblob['tables']:
                 key = tentry['name']
+                if key == "default":
+                    self.defaultformatting = tentry['header'].replace("<RKEY>","%s") 
+                    continue
                 if key not in self.formattingtables and key not in self.filtertables:
                     x = StrFormatRules()
                     self.formattingtables.update( {key : x } ) 
@@ -140,7 +143,7 @@ class AMQPBotConfig:
                     self.filtertables[key].extend(rkeys)
                 else:
                     self.formattingtables[key].rkeylist.extend(rkeys)
-                    self.formattingtables[key].formatstr = tentry['start'] + ' %s ' + tentry['end']
+                    self.formattingtables[key].formatstr = tentry['header'].replace("<RKEY>","%s")
 
     def auth_user(self,sendernick,hostname):
         if self.usersexists:
@@ -179,13 +182,13 @@ class AMQPBotConfig:
             return False
 
     ### Function to format the message, if it is found in some of the formatting-tables
-    def string_formatting(self,routingkey,text):
-        routingkey = routingkey.split(".")
+    def string_formatting(self,routingkey):
+        routingkeylisted = routingkey.split(".")
         for key in self.formattingtables:
             #this validates to false
-            if self.validate_rules(self.formattingtables[key].rkeylist,routingkey):
-                return (self.formattingtables[key].formatstr % text).decode('string-escape')
-        return text 
+            if self.validate_rules(self.formattingtables[key].rkeylist,routingkeylisted):
+                return (self.formattingtables[key].formatstr % routingkey).decode('string-escape')
+        return (self.defaultformatting % routingkey).decode('string-escape') 
 
     ### Function to determine whether a routing-key match the deny/allow filtering rules:
     ### First it determines if the message is in the allow-list, if it is, it checks whether it is in the deny list
@@ -521,9 +524,8 @@ class IRCClient:
                 msg = self.amqphandler.amqpq.popleft()
                 if self.cfg.routing_key_filter(msg[0]):
                     # format routingkey irc line
-                    text = "Routingkey: %s " % msg[0]
-                    msg_status = "(%s messages in bot queue)" % len(self.amqphandler.amqpq)
-                    msg[0] = self.cfg.string_formatting(msg[0],text) + msg_status
+                    msg_status = " (%s messages in bot queue)" % len(self.amqphandler.amqpq)
+                    msg[0]     = self.cfg.string_formatting(msg[0]) + msg_status
                     if self.debug:
                         self.ircprivmsg("Routing key allowed")
                     self.ircprivmsg(msg[0])
@@ -657,5 +659,3 @@ amqphandler = AMQPhandler(options)
 
 ### Spawn IRC object
 ircclient   = IRCClient(options,cfgobj,amqphandler)
-
-
