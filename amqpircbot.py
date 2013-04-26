@@ -19,41 +19,13 @@ import sys
 import socket
 import string
 import time
-import getpass
+import thread
 import pika
 import json
 import ssl
-import tempfile
 import logging
 logging.basicConfig()
 from collections import deque
-from optparse import OptionParser
-### Define and handle command line options
-use = "Usage: %prog [options]"
-parser = OptionParser(usage = use)
-
-### Debug option
-parser.add_option("-d", "--debug", action="store_true", dest="debug", default=False, help="Set to enable debugging, output received IRC messages to console...")
-
-### IRC specific options
-parser.add_option("-H", "--irchost", dest="irchost", metavar="irchost", default="irc.efnet.org", help="The IRC server hostname or IP (default: 'irc.efnet.org')")
-parser.add_option("-P", "--ircport", dest="ircport", metavar="ircport", default=6667, help="The IRC server port (default: 6667)")
-parser.add_option("-n", "--ircnick", dest="nick", metavar="nick", default="amqpirc", help="The bots IRC nickname (default: 'amqpirc')")
-parser.add_option("-R", "--ircname", dest="realname", metavar="realname", default="amqpirc bot", help="The bots IRC realname (default: 'amqpirc')")
-parser.add_option("-i", "--ircident", dest="ident", metavar="ident", default="amqpirc", help="The bots IRC ident (default: 'amqpirc')")
-parser.add_option("-c", "--ircchannel", dest="ircchannel", metavar="ircchannel", default="#amqpirc", help="The IRC channel the bot should join (default: '#amqpirc')")
-parser.add_option("-S", "--ssl", action="store_true", dest="ircusessl", default=False, help="Set to enable SSL connection to IRC")
-parser.add_option("-C", "--config", dest="config", metavar="config", default="./amqpircbot_config", help="The path of the config file (default: './amqpircbot_config')")
-
-### AMQP specific options
-parser.add_option("-a", "--amqphost", dest="amqpserver", metavar="amqpserver", default="localhost", help="The AMQP/RabbitMQ server hostname or IP (default: 'localhost')")
-parser.add_option("-u", "--amqpuser", dest="user", metavar="user", help="The AMQP username")
-parser.add_option("-p", "--amqppass", dest="password", metavar="password", help="The AMQP password (omit for password prompt). Set to 'nopass' if user/pass should not be used")
-parser.add_option("-e", "--amqpexchange", dest="exchange", metavar="exchange", default="myexchange", help="The AMQP exchange name (default 'myexchange')")
-parser.add_option("-A", "--allow", dest="allow", metavar="allow", default="#", help="The AMQP routingkeys to allow to be sent to IRC, in a comma seperated list. (default: '#')")
-parser.add_option("-I", "--ignore", dest="ignore", metavar="ignore", default=None, help="Ignore messages where the routingkey begins with one of the keys in this comma seperated list (default: None)")
-
-parser.add_option("-r", "--routingkey", dest="routingkey", metavar="routingkey", default="#", help="The AMQP routingkey that the bot will receive messages from. (default: '#')")
 
 ### Function to output to the console with a timestamp
 def consoleoutput(message):
@@ -66,39 +38,35 @@ class StrFormatRules:
         self.formatstr = ""
 
 class AMQPBotConfig:
-    def __init__(self,options):
-        self.options    = options
-        self.userlist   = list()
+    def __init__(self,config):
+        #self.options     = options
+        self.userlist    = list()
+        self.amqpoptions = { 'server'     : 'localhost',
+                             'user'       : None,  
+                             'password'   : None,  
+                             'exchange'   : 'myexchange', 
+                             'routingkey' : '#' }
 
-        ### Check if password has been supplied on the command-line, prompt for one otherwise
-        if not (options.password):
-            options.password=getpass.getpass("Enter AMQP password: ")
-        ### Check if options.ircchannel is prefixed with #, add it if not
-        if not (options.ircchannel[:1]=="#"):
-            options.ircchannel="#%s" % options.ircchannel
+        self.ircoptions = { 'host'        : 'irc.efnet.org',
+                            'port'        : 6667,
+                            'nick'        : 'amqpbot',
+                            'realname'    : 'amqpirc bot',
+                            'ident'       : 'amqpirc',
+                            'channel'     : '#amqpirc',
+                            'ssl_enabled' : 'no'}
 
-        ### Extract and parse routing keys from options input
-        self.filter_rules_allow    = string.split(options.allow,",")
-        if options.ignore:
-            self.filter_rules_deny = string.split(options.ignore,",")
-        else:
-            self.filter_rules_deny = list() 
-        for n in range(len(self.filter_rules_deny)):
-            self.filter_rules_deny[n] = string.split(self.filter_rules_deny[n],".")
-        for n in range(len(self.filter_rules_allow)):
-            self.filter_rules_allow[n] = string.split(self.filter_rules_allow[n],".")
 
-        self.filtertables      =  { 'allow' : self.filter_rules_allow,
-                                    'deny'  : self.filter_rules_deny }
+        self.filtertables      =  { 'allow' : list(),
+                                    'deny'  : list() }
         self.formattingtables  = dict()
         self.defaultformatting = "Routingkey: %s "
         ### Extract config name and path from commandline input and parse config from file
-        idx = options.config.rfind('/')
+        idx = config.rfind('/')
         if idx > -1:
-            fname = options.config[idx+1:]
-            path  = options.config[:idx]
+            fname = config[idx+1:]
+            path  = config[:idx]
         else:
-            fname = options.config
+            fname = config
             path  = "./"
         self.config_parser(fname,path)
 
@@ -115,16 +83,47 @@ class AMQPBotConfig:
                 line.replace("\n","")
                 cfgstr = cfgstr + line
             else:
-                line = line[:n] +"\n"
+                line   = line[:n] +"\n"
                 line.replace("\n","")
                 cfgstr = cfgstr + line
-        jsonblob   = json.loads(cfgstr)
+        jsonblob = json.loads(cfgstr)
         if 'users' in jsonblob:
             self.userlist.extend(jsonblob['users'])
             self.usersexists = True
         else:
             self.usersexists = False
                 
+        ## handle AMQPOptions here
+        if 'amqp_options' in jsonblob:
+            amqpo = jsonblob['amqp_options']
+            for key in amqpo:
+                self.amqpoptions[key] = amqpo[key]
+        else:
+            consoleoutput("Did not find any 'amqp_options' entry in config, was that on purpose?")
+        # if 'server' entry is omitted or empty string: "", apply default
+        if 'server' not in amqpo or self.amqpoptions['server'] == "":
+            self.amqpoptions['server'] = 'localhost'
+        if ('user' not in amqpo or self.amqpoptions['user'] == "") and ('password' not in amqpo or self.amqpoptions['password'] == ""):
+            self.amqpoptions['password'] = 'nopass' 
+        if 'exchange' not in amqpo or self.amqpoptions['exchange'] == "":
+            self.amqpoptions['exchange'] = 'myexchange'
+        if 'routingkey' not in amqpo or self.amqpoptions['routingkey'] == "":
+            self.amqpoptions['routingkey'] = '#'
+                
+        ## handle IRCOptions here
+        if 'irc_options' in jsonblob:
+            irco = jsonblob['irc_options']
+            for key in self.ircoptions:
+                if key not in irco:
+                    continue
+                elif irco[key] == "":
+                    continue
+                self.ircoptions[key] = irco[key]
+        else:
+            consoleoutput("Did not find any 'irc_options' entry in config, was that on purpose?")
+        if self.ircoptions['channel'][0] != '#':
+            self.ircoptions['channel'] = '#' + self.ircoptions['channel']
+
         ## adjoins the tables->routingkeys to the appropriate tables (i.e. might have values of commandline arguments)
         if 'tables' in jsonblob:
             for tentry in jsonblob['tables']:
@@ -151,9 +150,7 @@ class AMQPBotConfig:
             for user in self.userlist:
                 if user['host'] == hostname and user['nick'] == sendernick:
                     return True
-            return False
-        else:
-            return True
+        return False
 
     # Checks each subkey to see if it matches the rule. If the entire rule matches (the relevant part of) the routing key the rule is validated 
     # otherwise it is not
@@ -174,7 +171,7 @@ class AMQPBotConfig:
                         rule_validated = True
                         break
 
-                ### If the rule validated the message, stop looking thorugh filter_rules_allow
+                ### If the rule validated the message, stop looking thorugh rules allow
                 if rule_validated:
                     break
             return rule_validated
@@ -194,15 +191,15 @@ class AMQPBotConfig:
     ### First it determines if the message is in the allow-list, if it is, it checks whether it is in the deny list
     ### Returns True if the message is relevant and False if it should be discarded 
     def routing_key_filter(self,routing_key):
-        ### If the the routingkey is in filter_rules_allow see if it is in the ignore list. If so, return false otherwise return true
-        if not self.validate_rules(self.filter_rules_allow,routing_key):
+        ### If the the routingkey is in filter allow see if it is in the ignore list. If so, return false otherwise return true
+        if not self.validate_rules(self.filtertables['allow'],routing_key):
             return False
         else:
             #first check if there are any rules in the deny table
-            if len(self.filter_rules_deny) == 0: 
+            if len(self.filtertables['deny']) == 0: 
                 return True 
             #if there is, check them to see if there is a match or not
-            elif self.validate_rules(self.filter_rules_deny,routing_key):
+            elif self.validate_rules(self.filtertables['deny'],routing_key):
                 return False
             else:
                 return True
@@ -264,11 +261,11 @@ class AMQPhandler:
         self.conn[0].channel.basic_publish(exchange=self.exchange,routing_key=self.routingkey,body=amqpbody,properties=self.properties)
 
     def __init__(self,options):
-        self.amqphost      = options.amqpserver
-        self.user          = options.user
-        self.password      = options.password
-        self.exchange      = options.exchange
-        self.routingkey    = options.routingkey
+        self.amqphost      = options['server']
+        self.user          = options['user']
+        self.password      = options['password']
+        self.exchange      = options['exchange']
+        self.routingkey    = options['routingkey']
         self.conn          = None
         self.chanlist      = list();
         self.properties    = pika.BasicProperties(delivery_mode=2)
@@ -304,12 +301,14 @@ class IRCClient:
     def __init__(self,options,cfg,amqphandler):
         self.amqphandler = amqphandler
         self.cfg         = cfg
-        self.irchost     = options.irchost
-        self.ircport     = options.ircport
-        self.ircssl      = options.ircusessl
-        self.ircchannel  = options.ircchannel
-        self.botnick     = options.nick
-        self.debug       = options.debug
+        self.host        = options['host']
+        self.port        = options['port']
+        self.ircssl      = options['ssl_enabled']
+        self.ircchannel  = options['channel']
+        self.botnick     = options['nick']
+        self.ident       = options['ident']
+        self.realname    = options['realname']
+        self.debug       = debug 
         self.ircq        = deque()
         self.sendernick  = ""
         self.readbuffer  = ""
@@ -331,8 +330,8 @@ class IRCClient:
         try:
             self.s=socket.socket( )
             self.s.settimeout(1)
-            consoleoutput("Connecting to IRC server %s port %s ..." % (self.irchost,self.ircport))
-            self.s.connect((self.irchost, int(self.ircport)))
+            consoleoutput("Connecting to IRC server %s port %s ..." % (self.host,self.port))
+            self.s.connect((self.host, int(self.port)))
         except:
             consoleoutput("Unable to connect to IRC, error: %s" % sys.exc_info()[0])
             sys.exit(1)
@@ -350,7 +349,7 @@ class IRCClient:
 
         ### NICK and USER
         self.setnick()
-        self.ircsend("USER %s %s bla :%s" % (options.ident,options.irchost,options.realname))
+        self.ircsend("USER %s %s bla :%s" % (self.ident,self.host,self.realname))
 
         ### JOIN irc channel This can probably be removed
         self.joinchannel()
@@ -443,7 +442,6 @@ class IRCClient:
         rule = string.split(rule,".")
         rules.append(rule)
         self.ircprivmsg("Rule succesfully added!",target)
-
 
     ### Delete rule from one of the rule tables. Return True on success, False othwise
     def delrule(self,line,target):
@@ -595,7 +593,8 @@ class IRCClient:
             ### Handle raw 433 (raw 433 is sent when the chosen nickname is in use)
             if(line[1]=="433"):
                 consoleoutput("Nickname %s is in use, trying another..." % self.botnick)
-                self.setnick(nick="%s%s" % (self.botnick,nickcount))
+                self.setnick(nick="%s%s" % (self.botnick,self.nickcount))
+                self.botnick = self.botnick + str(self.nickcount)
                 self.nickcount += 1
                 continue
 
@@ -648,14 +647,29 @@ class IRCClient:
 
 ###############################################################################
 
-### get commandline options
-options, args = parser.parse_args()
+## function to use in thread-spawning
+def init_threadbot(cfg):
+    cfgobj = AMQPBotConfig(cfg)
+    amqph  = AMQPhandler(cfgobj.amqpoptions)
+    ircclient = IRCClient(cfgobj.ircoptions,cfgobj,amqph)
 
-### Create configuration object
-cfgobj      = AMQPBotConfig(options)
+def init_bot(cfgstr):
+    ### Create configuration object
+    cfgobj      = AMQPBotConfig(cfgstr)
+    ### Spawn AMQP object
+    amqphandler = AMQPhandler(cfgobj.amqpoptions) 
+    ### Spawn IRC object
+    ircclient   = IRCClient(cfgobj.ircoptions,cfgobj,amqphandler)
 
-### Spawn AMQP object
-amqphandler = AMQPhandler(options) 
+## fetch command line arguments
+debug = False
+if len(sys.argv)>2:
+    if sys.argv[2] == 'debug':
+        debug = True
+cfgstr = sys.argv[1]
 
-### Spawn IRC object
-ircclient   = IRCClient(options,cfgobj,amqphandler)
+## If there is only one bot to start then do not use threads
+cfglist = cfgstr.split(',') 
+for n in range(1,len(cfglist)):
+    thread.start_new_thread(init_threadbot,(cfglist[n],))
+init_bot(cfglist[0])
