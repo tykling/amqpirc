@@ -315,7 +315,8 @@ class IRCClient:
         self.irclinelist = list()
         self.joined      = False
         self.nickcount   = 0
-        self.commandict  = {'listrules'     : self.listrules,
+        self.commandict  = {'help'          : self.printircmds,
+                            'listrules'     : self.listrules,
                            'amqpsend'       : self.amqpsend,
                            'ping'           : self.ping, 
                            'addrule'        : self.addrule,
@@ -326,6 +327,18 @@ class IRCClient:
                            'amqpopen'       : self.amqpopen,
                            'amqpchangekey'  : self.amqpchangekey,
                            'amqpstatus'     : self.amqpstatus}
+        self.helpdict    = {'help'          : '"help <string>" lists all commands containing <string>. If <string> is empty, all commands are listed.',
+                           'listrules'     : '"listrules <table>" lists the routingkeys in <table>',
+                           'amqpsend'       : '"amqpsend <rkey> <body>" sends a amqp message with routing key <rkey> and message <body>.',
+                           'ping'           : '"ping" makes the bot respond with a "pong" message.', 
+                           'addrule'        : 'addrule <table> <rkey> adds <rkey>-rule to <table>',
+                           'delrule'        : 'delrule <table> <rkey> removes the <rkey> rule from <table>',
+                           'amqpclose'      : 'closes the receiving amqp channel',
+                           'amqppurgeopen'  : 'opens the receiving amqp channel and purges the queue immediately after opening',
+                           'amqpdisconnect' : 'dicsonnects from amqp! (Should not be used for other than debugging)',
+                           'amqpopen'       : 'opens the receiving amqp channel',
+                           'amqpchangekey'  : 'change the routingkey the receiving channel is listening to',
+                           'amqpstatus'     : 'reports the status of the receiving channel: Is it closed/closing or open. Atm it seems like it says "closing" when it is closed'}
 
         try:
             self.s=socket.socket( )
@@ -403,10 +416,26 @@ class IRCClient:
                 os._exit(0)
 
     ############## Command functions for IRC #################
+    ## line[4] contains the command.
     ### List selected rules
     def ping(self,line,target):
         ### send PONG to IRC
         self.ircprivmsg("%s: pong" % self.sendernick,target)
+
+    ### prints help function
+    def printircmds(self,line,target):
+        if len(line)<6:
+            searchstr = ""
+            self.ircprivmsg("Commands for the AMQP bot:",target)
+        else:
+            searchstr = line[5]
+            self.ircprivmsg("Commands for the AMQP bot matching search-string '%s'" % searchstr,target)
+        
+        for cmd in self.helpdict:
+            if searchstr in cmd:
+                self.ircprivmsg("%s: %s" % (cmd,self.helpdict[cmd]),target)                
+        self.ircprivmsg("That's it!")
+
 
     ###### Table management functions
     ### List rules on irc. Returns True if success, False if failing
