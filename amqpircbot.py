@@ -1,16 +1,11 @@
 #!/usr/local/bin/python
 #####################################################################
-# amqpircbot.py is a part of amqpirc which is an AMQP to IRC proxy.
 #
-# amqpircbot.py is the IRC bot which connects to the specified IRC
-# server and outputs messages from the specified spool path.
-# 
-# amqpircspool.py is the AMQP client which connects to AMQP/RabbitMQ
-# and listens to the specified exchange, writing messages to the
-# specified spool path.
+# AMQPBot an IRC bot that relays/sends AMQP messages to/from IRC.
 #
 # README and the latest version of the script can be found on Github:
-# https://github.com/tykling/amqpirc
+# https://github.com/tykling/amqpirc or possibly
+# https://github.com/borgtu/amqpirc
 #####################################################################
 
 ### Load libraries

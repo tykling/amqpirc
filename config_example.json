@@ -1,0 +1,66 @@
+% Commented example (json) config for the AMQPBot
+% Use '%' for comments...
+% This is the options for the AMQP and IRC clients, they should be pretty explanatory.
+{
+"amqp_options" : {
+        "server"     : "127.0.0.1",  % The AMQP/RabbitMQ server hostname or IP (default: 'localhost')
+        "user"       : "guest",      % The AMQP username (default: 'guest')
+        "password"   : "guest",      % The AMQP password (default: 'guest') 
+        "exchange"   : "myexchange", % The AMQP exchange name (default 'myexchange')
+        "routingkey" : "#",          % Routingkey to listen for. (default: '#')
+        "maxfetch"   : "20",         % Maxminum number of fetches per fetch-session (default: '20').
+        "vhost"      : "/"           % The AMQP vhost (default: '/')
+    },
+"irc_options" : {
+        "host" : "irc.freenode.net", % The IRC server hostname or IP (default: 'irc.efnet.org')
+        "port" : "6697",             % The IRC server port (default: 6667)
+        "nick" : "amqpbot",          % The bots IRC nickname (default: 'amqpirc')
+        "realname" : "",             % The bots IRC realname (default: 'amqpirc')
+        "ident" : "",                % The bots IRC ident (default: 'amqpirc')
+        "channel" : "amqpbotchan",   % The IRC channel the bot should join (default: '#amqpirc')
+        "ssl_enabled" : "yes"        % Whether or not SSL should be enabled for the IRC connection (default: no)
+    }        
+% This is the users that can access the bots commands.
+% If no users is supplied in the config (i.e. by ommitting the "users" entry), everyone is allowed.
+"users" : [
+	  {
+          "nick"     : "Tykling", 
+          "host"     : "gibfest.dk"
+	  },
+	  {
+          "nick"     : "borgtu",
+          "host"     : "ildipiben.dk"
+      }
+	      ], 
+
+% This section defines the tables and their rules. There exists three special tables which is known to the AMQPBot beforehand:
+% 'allow', 'deny' and 'default'. Their meaning is special and have been described in the README.md. The 'default' table contains  
+% the standard template if the routing key of a message does not match any of the routing keys from the user-defined tables.
+% The '<RKEY>' keyword is substituted for the routing key when the AMQPBot is using the template for relaying a message. 
+% The '\\x038' is a colorcode for use in IRC (yellow). All the standard IRC color and control codes are in the 'README.md' file.
+% Atm there is no way to make templates for the body of a message. Only the way to display the routing key can be modified by the user.
+"tables" : [
+    {
+        "name"  : "allow", 
+        "rkeys" : "#"
+    }, 
+    {
+        "name"  : "deny",
+        "rkeys" : "a.routingkey,and.another.key"
+    },
+    {
+        "name"  : "deny",
+        "rkeys" : "yet.another.key"
+    },
+    %table that produces yellow coloring of the routing key
+    {
+        "name"  : "warning",
+        "rkeys" : "warning.key",
+        "header": "\\x038 Routingkey: <RKEY>\\x03"
+    },
+    {
+        "name"  : "default",
+        "header": "Routingkey: <RKEY>"
+    }
+           ],
+}
