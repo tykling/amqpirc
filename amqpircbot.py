@@ -42,9 +42,11 @@ class AMQPBotConfig:
         #self.options     = options
         self.userlist    = list()
         self.amqpoptions = { 'server'     : 'localhost',
-                             'user'       : None,  
-                             'password'   : None,  
+                             'user'       : 'guest',  
+                             'password'   : 'guest',  
                              'exchange'   : 'myexchange', 
+                             'maxfetch'   : 20,
+                             'vhost'      : '/',
                              'routingkey' : '#' }
 
         self.ircoptions = { 'host'        : 'irc.efnet.org',
@@ -97,18 +99,12 @@ class AMQPBotConfig:
         if 'amqp_options' in jsonblob:
             amqpo = jsonblob['amqp_options']
             for key in amqpo:
-                self.amqpoptions[key] = amqpo[key]
+                if amqpo[key] == "":
+                    continue
+                else:
+                    self.amqpoptions[key] = amqpo[key]
         else:
             consoleoutput("Did not find any 'amqp_options' entry in config, was that on purpose?")
-        # if 'server' entry is omitted or empty string: "", apply default
-        if 'server' not in amqpo or self.amqpoptions['server'] == "":
-            self.amqpoptions['server'] = 'localhost'
-        if ('user' not in amqpo or self.amqpoptions['user'] == "") and ('password' not in amqpo or self.amqpoptions['password'] == ""):
-            self.amqpoptions['password'] = 'nopass' 
-        if 'exchange' not in amqpo or self.amqpoptions['exchange'] == "":
-            self.amqpoptions['exchange'] = 'myexchange'
-        if 'routingkey' not in amqpo or self.amqpoptions['routingkey'] == "":
-            self.amqpoptions['routingkey'] = '#'
                 
         ## handle IRCOptions here
         if 'irc_options' in jsonblob:
@@ -121,6 +117,7 @@ class AMQPBotConfig:
                 self.ircoptions[key] = irco[key]
         else:
             consoleoutput("Did not find any 'irc_options' entry in config, was that on purpose?")
+
         if self.ircoptions['channel'][0] != '#':
             self.ircoptions['channel'] = '#' + self.ircoptions['channel']
 
@@ -225,11 +222,8 @@ class AMQPChannel:
 class AMQPhandler:
     def create_connection(self,n):
         try:
-            ### Connect to ampq and open channel
-            if (self.password == 'nopass'):
-                self.conn = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost))
-            else:
-                self.conn = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost,credentials=pika.PlainCredentials(self.user, self.password)))
+            ### Connect to ampq 
+            self.conn = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost,virtual_host=self.vhost,credentials=pika.PlainCredentials(self.user, self.password)))
         except:
             consoleoutput("Unable to connect to AMQP, error: %s" % sys.exc_info()[0])
             sys.exit(1)
@@ -266,6 +260,8 @@ class AMQPhandler:
         self.password      = options['password']
         self.exchange      = options['exchange']
         self.routingkey    = options['routingkey']
+        self.maxfetch      = options['maxfetch']
+        self.vhost         = options['vhost']
         self.conn          = None
         self.chanlist      = list();
         self.properties    = pika.BasicProperties(delivery_mode=2)
@@ -283,13 +279,15 @@ class AMQPhandler:
         self.declare_queueANDbind(1)
 
     def check_incoming(self):
+        count = 0
         if self.chanlist[1].channel.is_open:
-            while True:
+            while True and self.maxfetch > count:
                 method, header, body = self.chanlist[1].channel.basic_get(queue=self.chanlist[1].queue_name,no_ack=True)
                 if header:
                     self.amqpq.append([method.routing_key,body])
                 else:
                     break
+                count += 1
 
 ### Define exception to use for socket read errors
 class ReadError(Exception):
@@ -328,11 +326,11 @@ class IRCClient:
                            'amqpchangekey'  : self.amqpchangekey,
                            'amqpstatus'     : self.amqpstatus}
         self.helpdict    = {'help'          : '"help <string>" lists all commands containing <string>. If <string> is empty, all commands are listed.',
-                           'listrules'     : '"listrules <table>" lists the routingkeys in <table>',
+                           'listrules'      : '"listrules <table>" lists the routingkeys in <table>',
                            'amqpsend'       : '"amqpsend <rkey> <body>" sends a amqp message with routing key <rkey> and message <body>.',
-                           'ping'           : '"ping" makes the bot respond with a "pong" message.', 
-                           'addrule'        : 'addrule <table> <rkey> adds <rkey>-rule to <table>',
-                           'delrule'        : 'delrule <table> <rkey> removes the <rkey> rule from <table>',
+                           'ping'           : '"ping" makes the bot respond with a "pong" message (to check if it is alve).', 
+                           'addrule'        : '"addrule <table> <rkey>" adds <rkey>-rule to <table>',
+                           'delrule'        : '"delrule <table> <entry no.>" removes the routing key rule no. <entry no.> from <table>',
                            'amqpclose'      : 'closes the receiving amqp channel',
                            'amqppurgeopen'  : 'opens the receiving amqp channel and purges the queue immediately after opening',
                            'amqpdisconnect' : 'dicsonnects from amqp! (Should not be used for other than debugging)',
@@ -434,8 +432,7 @@ class IRCClient:
         for cmd in self.helpdict:
             if searchstr in cmd:
                 self.ircprivmsg("%s: %s" % (cmd,self.helpdict[cmd]),target)                
-        self.ircprivmsg("That's it!")
-
+        self.ircprivmsg("That's it! Remember to put '<botnick>:' in front of the commands.",target)
 
     ###### Table management functions
     ### List rules on irc. Returns True if success, False if failing
@@ -682,6 +679,7 @@ def init_threadbot(cfg):
     amqph  = AMQPhandler(cfgobj.amqpoptions)
     ircclient = IRCClient(cfgobj.ircoptions,cfgobj,amqph)
 
+## non-threaded spawning
 def init_bot(cfgstr):
     ### Create configuration object
     cfgobj      = AMQPBotConfig(cfgstr)
