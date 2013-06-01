@@ -110,7 +110,7 @@ specification and meaning:
             "nick" : "amqpbot",          % The bots IRC nickname (default: 'amqpirc')
             "realname" : "",             % The bots IRC realname (default: 'amqpirc')
             "ident" : "",                % The bots IRC ident (default: 'amqpirc')
-            "channel" : "amqpbotchan",   % The IRC channel the bot should join (default: '#amqpirc')
+            "channel" : "amqpbotchan",   % The IRC channel the bot should join (default: '#amqpirc') prepends a '#' if not present
             "ssl_enabled" : "yes"        % Whether or not SSL should be enabled for the IRC connection (default: no)
         }        
     % This is the users that can access the bots commands.
