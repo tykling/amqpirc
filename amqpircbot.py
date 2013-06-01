@@ -50,13 +50,15 @@ class AMQPBotConfig:
                             'realname'    : 'amqpirc bot',
                             'ident'       : 'amqpirc',
                             'channel'     : '#amqpirc',
-                            'ssl_enabled' : 'no'}
+                            'ssl_enabled' : False}
 
 
         self.filtertables      =  { 'allow' : list(),
                                     'deny'  : list() }
         self.formattingtables  = dict()
         self.defaultformatting = "Routingkey: %s "
+        self.notables          = True
+
         ### Extract config name and path from commandline input and parse config from file
         idx = config.rfind('/')
         if idx > -1:
@@ -118,6 +120,7 @@ class AMQPBotConfig:
 
         ## adjoins the tables->routingkeys to the appropriate tables (i.e. might have values of commandline arguments)
         if 'tables' in jsonblob:
+            self.notables = False
             for tentry in jsonblob['tables']:
                 key = tentry['name']
                 if key == "default":
@@ -142,11 +145,15 @@ class AMQPBotConfig:
             for user in self.userlist:
                 if user['host'] == hostname and user['nick'] == sendernick:
                     return True
+        else:
+            return True
         return False
 
     # Checks each subkey to see if it matches the rule. If the entire rule matches (the relevant part of) the routing key the rule is validated 
     # otherwise it is not
     def validate_rules(self,filter_rules,routing_key):
+        if self.notables:
+            return True
         if len(filter_rules) > 0:
             rule_validated = False
             for rule in filter_rules: 
@@ -247,7 +254,7 @@ class AMQPhandler:
         self.routingkey = rkey
 
     def amqpsend(self,amqpbody,routingkey):
-        self.conn[0].channel.basic_publish(exchange=self.exchange,routing_key=self.routingkey,body=amqpbody,properties=self.properties)
+        self.conn.channel.basic_publish(exchange=self.exchange,routing_key=self.routingkey,body=amqpbody,properties=self.properties)
 
     def __init__(self,options):
         self.amqphost      = options['server']

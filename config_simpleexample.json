@@ -10,12 +10,12 @@
         "routingkey" : "#"           % Routingkey to listen for. (default: '#')
     },
 "irc_options" : {
-        "host" : "irc.freenode.net", % The IRC server hostname or IP (default: 'irc.efnet.org')
-        "port" : "6697",             % The IRC server port (default: 6667)
-        "nick" : "amqpbot",          % The bots IRC nickname (default: 'amqpirc')
-        "realname" : "",             % The bots IRC realname (default: 'amqpirc')
-        "ident" : "",                % The bots IRC ident (default: 'amqpirc')
-        "channel" : "amqpbotchan",   % The IRC channel the bot should join (default: '#amqpirc')
-        "ssl_enabled" : "yes"        % Whether or not SSL should be enabled for the IRC connection (default: no)
+    "host" : "irc.freenode.net", % The IRC server hostname or IP (default: 'irc.efnet.org')
+    "port" : "6697",             % The IRC server port (default: 6667)
+    "nick" : "amqpbot",          % The bots IRC nickname (default: 'amqpirc')
+    "realname" : "",             % The bots IRC realname (default: 'amqpirc')
+    "ident" : "",                % The bots IRC ident (default: 'amqpirc')
+    "channel" : "amqpbotchan",   % The IRC channel the bot should join (default: '#amqpirc')
+    "ssl_enabled" : true        % Whether or not SSL should be enabled for the IRC connection (default: no)
     }        
 }
