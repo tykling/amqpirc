@@ -222,7 +222,7 @@ class AMQPChannel:
 
 ### AMQP-receiving class 
 class AMQPhandler:
-    def create_connection(self,n):
+    def create_connection(self):
         try:
             ### Connect to ampq 
             self.conn = pika.BlockingConnection(pika.ConnectionParameters(host=self.amqphost,virtual_host=self.vhost,credentials=pika.PlainCredentials(self.user, self.password)))
@@ -254,7 +254,7 @@ class AMQPhandler:
         self.routingkey = rkey
 
     def amqpsend(self,amqpbody,routingkey):
-        self.conn.channel.basic_publish(exchange=self.exchange,routing_key=self.routingkey,body=amqpbody,properties=self.properties)
+        self.chanlist[0].channel.basic_publish(exchange=self.exchange,routing_key=routingkey,body=amqpbody,properties=self.properties)
 
     def __init__(self,options):
         self.amqphost      = options['server']
@@ -270,8 +270,10 @@ class AMQPhandler:
         ### List of messages that havne't been printed to IRC
         self.amqpq         = deque()
 
-        ### create sending connection w. channel and exchange
-        self.create_connection(0)
+        ### create connection to rabbitmq
+        self.create_connection()
+
+        ### create sending channel and exchange
         self.create_channel(0)
         self.declare_exchange(0)
 
@@ -651,7 +653,7 @@ class IRCClient:
         for line in self.irclinelist: 
             target = True
             if(line[1]=="PRIVMSG"):
-                if (line[2]==self.ircchannel and line[3]==":%s:" % self.botnick):
+                if (line[2]==self.ircchannel and line[3]==u':%s:' % self.botnick):
                     target = False
                 elif (line[2]==self.botnick):
                     line.insert(3,None)
