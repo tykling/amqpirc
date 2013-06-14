@@ -36,16 +36,34 @@ class AMQPBotConfig:
     def __init__(self,config):
         #self.options     = options
         self.userlist    = list()
-        self.amqpoptions = { 'server'     : 'localhost',
-                             'user'       : 'guest',  
-                             'password'   : 'guest',  
-                             'exchange'   : 'myexchange', 
-                             'maxfetch'   : 20,
-                             'vhost'      : '/',
-                             'routingkey' : '#' }
+#exchange_declare(exchange=None, exchange_type='direct', passive=False, durable=False, auto_delete=False, internal=False, nowait=False, arguments=None, type=None)
+#queue_declare(queue='', passive=False, durable=False, exclusive=False, auto_delete=False, nowait=False, arguments=None)
+        self.amqpoptions = { 'server'       : 'localhost',
+                             'user'         : 'guest',  
+                             'password'     : 'guest',  
+                             'exchange'     : 'myexchange', 
+                             'maxfetch'     : 20,
+                             'vhost'        : '/',
+                             'routingkey'   : '#' ,
+                             'exc_passive'  : False,
+                             'exc_durable'  : False,
+                             'exc_autodel'  : False,
+                             'exc_internal' : False,                             
+                             'exc_nowait'   : False,                             
+                             'exc_args'     : None,                             
+                             'exc_type'     : 'topic',                             
+                             'queue'        : '',
+                             'que_passive'  : False,
+                             'que_durable'  : False,
+                             'que_exclusive': False,
+                             'que_autodel'  : False,
+                             'que_nowait'   : False,                             
+                             'que_args'     : None}                             
 
         self.ircoptions = { 'host'        : 'irc.efnet.org',
                             'port'        : 6667,
+                            'serverpass'  : False,
+                            'channelpass' : False,
                             'nick'        : 'amqpbot',
                             'realname'    : 'amqpirc bot',
                             'ident'       : 'amqpirc',
@@ -240,11 +258,13 @@ class AMQPhandler:
 
     def declare_exchange(self,n):
         ### Declare exchange
-        self.chanlist[n].channel.exchange_declare(exchange=self.exchange,type='topic')#, durable=True, auto_delete=False)#passive=True
+        self.chanlist[n].channel.exchange_declare(exchange=self.exchange,exchange_type=self.exc_type, passive=self.exc_passive, durable=self.exc_durable,
+                                                  auto_delete=self.exc_autodel, internal=self.exc_internal, nowait=self.exc_nowait, arguments=self.exc_args)
 
     def declare_queueANDbind(self,n):
         ### Declare queue and get unique queuename
-        self.chanlist[n].result     = self.chanlist[n].channel.queue_declare(exclusive=True)
+        self.chanlist[n].result = self.chanlist[n].channel.queue_declare(queue=self.queue, passive=self.que_passive, durable=self.que_durable, nowait=self.que_nowait, 
+                                                                         exclusive=self.que_exclusive, auto_delete=self.que_autodel, arguments=self.que_args)
         self.chanlist[n].queue_name = self.chanlist[n].result.method.queue
         self.chanlist[n].channel.queue_bind(exchange=self.exchange,queue=self.chanlist[n].queue_name,routing_key=self.routingkey)
                        
@@ -264,6 +284,21 @@ class AMQPhandler:
         self.routingkey    = options['routingkey']
         self.maxfetch      = options['maxfetch']
         self.vhost         = options['vhost']
+        self.exc_passive   = options['exc_passive']
+        self.exc_durable   = options['exc_durable']
+        self.exc_autodel   = options['exc_autodel']
+        self.exc_internal  = options['exc_internal']
+        self.exc_nowait    = options['exc_nowait']
+        self.exc_args      = options['exc_args']
+        self.exc_type      = options['exc_type']
+        self.queue         = options['queue']
+        self.que_passive   = options['que_passive']
+        self.que_durable   = options['que_durable']
+        self.que_exclusive = options['que_exclusive']
+        self.que_autodel   = options['que_autodel']
+        self.que_nowait    = options['que_nowait']
+        self.que_args      = options['que_args']
+
         self.conn          = None
         self.chanlist      = list();
         self.properties    = pika.BasicProperties(delivery_mode=2)
@@ -310,6 +345,8 @@ class IRCClient:
         self.botnick     = options['nick']
         self.ident       = options['ident']
         self.realname    = options['realname']
+        self.serverpass  = options['serverpass']
+        self.channelpass = options['channelpass']
         self.debug       = debug 
         self.ircq        = deque()
         self.sendernick  = ""
@@ -329,6 +366,7 @@ class IRCClient:
                            'amqpopen'       : self.amqpopen,
                            'amqpchangekey'  : self.amqpchangekey,
                            'amqpstatus'     : self.amqpstatus}
+
         self.helpdict    = {'help'          : '"help <string>" lists all commands containing <string>. If <string> is empty, all commands are listed.',
                            'listrules'      : '"listrules <table>" lists the routingkeys in <table>',
                            'amqpsend'       : '"amqpsend <rkey> <body>" sends a amqp message with routing key <rkey> and message <body>.',
@@ -345,22 +383,26 @@ class IRCClient:
         try:
             self.s=socket.socket( )
             self.s.settimeout(1)
-            consoleoutput("Connecting to IRC server %s port %s ..." % (self.host,self.port))
+            self.ircconsoleoutput("Connecting to IRC server %s port %s ..." % (self.host,self.port))
             self.s.connect((self.host, int(self.port)))
         except:
-            consoleoutput("Unable to connect to IRC, error: %s" % sys.exc_info()[0])
+            self.ircconsoleoutput("Unable to connect to IRC, error: %s" % sys.exc_info()[0])
             sys.exit(1)
 
         ### Enable SSL if requested
         if(self.ircssl):
-            consoleoutput("Enabling SSL for this IRC connection...")
+            self.ircconsoleoutput("Enabling SSL for this IRC connection...")
             try:
                 self.s = ssl.wrap_socket(self.s)
             except:
-                consoleoutput("Unable to enable SSL for this connection, error: %s" % sys.exc_info()[0])
+                self.ircconsoleoutput("Unable to enable SSL for this connection, error: %s" % sys.exc_info()[0])
                 sys.exit(1)
         else:
-            consoleoutput("Not enabling SSL for this IRC connection...")
+            self.ircconsoleoutput("Not enabling SSL for this IRC connection...")
+
+        if self.serverpass:
+            self.ircsend("PASS %s" % self.serverpass)
+        
 
         ### NICK and USER
         self.setnick()
@@ -389,12 +431,12 @@ class IRCClient:
             except (KeyboardInterrupt):
                 self.ircprivmsg("I'm afraid. I'm afraid, Dave. Dave, my mind is going. I can feel it.")
                 self.queuesend()
-                consoleoutput("control-c received, exiting")
+                self.ircconsoleoutput("control-c received, exiting")
                 sys.exit(0)
             
             ### socket read error exception (disconnected from IRC)
             except (ReadError):
-                consoleoutput("socket disconnected/error, bailing out")
+                self.ircconsoleoutput("socket disconnected/error, bailing out")
                 sys.exit(1)
 
             ### Continue the loop after SSL socket timeout error (happens if we didn't receive any data before timeout)
@@ -495,7 +537,7 @@ class IRCClient:
                 rules.remove(rules[int(rule_no)])
             success = True
         except:
-            consoleoutput("Error! Unable to delete rule no. %s" % str(rule_no))
+            self.ircconsoleoutput("Error! Unable to delete rule no. %s" % str(rule_no))
             success = False
 
         if not success:
@@ -562,6 +604,10 @@ class IRCClient:
                     self.ircprivmsg("Routing key denied")
 
     ########### Misc commands for IRChandling ###################
+    ### Append botnick to console output
+    def ircconsoleoutput(self,message):
+        consoleoutput("%s: %s" % (self.botnick, message))   
+
     ### Read from the socket and prepare data for parsing 
     def readirc(self):
         buf = self.s.recv(1024)
@@ -574,7 +620,7 @@ class IRCClient:
         ### Loop through the lines received from the IRC server and make list of sentences with lists of  words
         for n in range(len(self.irclinelist)):
             if(self.debug):
-                consoleoutput("<IRC: %s" % self.irclinelist[n])
+                self.ircconsoleoutput("<IRC: %s" % self.irclinelist[n])
             self.irclinelist[n] = string.split(string.rstrip(self.irclinelist[n]))
         self.irclinelist
 
@@ -587,7 +633,7 @@ class IRCClient:
     ### Function to send message on the IRC socket (adds \r\n to the message)
     def ircsend(self,message):
         if(self.debug):
-            consoleoutput(">IRC: %s" % message)
+            self.ircconsoleoutput(">IRC: %s" % message)
         if(message[-2:]=='\r\n'):
             self.ircq.append("%s" % message)
         else:
@@ -598,19 +644,22 @@ class IRCClient:
             try:
                 self.s.send(self.ircq.popleft())
             except Exception as e:
-                consoleoutput("Socket exception sending to IRC, type: %s exception message: %s" % (str(type(e)),e.strerror))
+                self.ircconsoleoutput("Socket exception sending to IRC, type: %s exception message: %s" % (str(type(e)),e.strerror))
                 sys.exit(1)
 
     def joinchannel(self,channel=None):
         if not channel:
             channel = self.ircchannel
-        consoleoutput("Joining channel %s" % channel)
-        self.ircsend("JOIN %s" % channel)
+        self.ircconsoleoutput("Joining channel %s" % channel)
+        if self.channelpass:
+            self.ircsend("JOIN %s %s" % (channel,self.channelpass))
+        else:
+            self.ircsend("JOIN %s" % channel)
 
     def setnick(self,nick=None):
         if not nick:
             nick = self.botnick
-        consoleoutput("Setting IRC nickname %s" % nick)
+        self.ircconsoleoutput("Setting IRC nickname %s" % nick)
         self.ircsend("NICK %s" % nick)
 
     def sanitycheck(self):
@@ -622,7 +671,7 @@ class IRCClient:
 
             ### Handle raw 433 (raw 433 is sent when the chosen nickname is in use)
             if(line[1]=="433"):
-                consoleoutput("Nickname %s is in use, trying another..." % self.botnick)
+                self.ircconsoleoutput("Nickname %s is in use, trying another..." % self.botnick)
                 self.setnick(nick="%s%s" % (self.botnick,self.nickcount))
                 self.botnick = self.botnick + str(self.nickcount)
                 self.nickcount += 1
@@ -631,20 +680,20 @@ class IRCClient:
             ### Handle raw 353 (raw 353 is sent after channel JOIN completes)
             if(line[1]=="353"):
                 self.joined=True
-                consoleoutput("Joined channel %s" % self.ircchannel)
+                self.ircconsoleoutput("Joined channel %s" % self.ircchannel)
                 continue
 
             ### Handle KICK (attempt rejoin)
             if(line[1]=="KICK" and line[2]==self.ircchannel and line[3]==self.botnick):
                 self.joined=False
-                consoleoutput("Kicked from channel by %s - attempting rejoin..." % line[0])
+                self.ircconsoleoutput("Kicked from channel by %s - attempting rejoin..." % line[0])
                 continue
 
             ### Handle raw 474 (raw 474 is sent when the bot tries to join the channel and is banned)
             if(line[1]=="474"):
                 ### try joining again until successful, sleep 1 sec first to avoid flooding the server
                 time.sleep(1)
-                consoleoutput("Banned from channel %s - attempting rejoin..." % self.ircchannel)
+                self.ircconsoleoutput("Banned from channel %s - attempting rejoin..." % self.ircchannel)
                 continue
         return self.joined
 
@@ -665,7 +714,7 @@ class IRCClient:
                 self.sendernick=line[0][1:].partition("!")[0]
                 if target:
                     target = self.sendernick
-                consoleoutput("IRC command from %s received: %s" % (self.sendernick,fullcommand))
+                self.ircconsoleoutput("IRC command from %s received: %s" % (self.sendernick,fullcommand))
                 hostname = line[0].partition("@")[2]
                 if self.cfg.auth_user(self.sendernick,hostname):
                     if line[4] in self.commandict:
