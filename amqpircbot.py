@@ -36,8 +36,6 @@ class AMQPBotConfig:
     def __init__(self,config):
         #self.options     = options
         self.userlist    = list()
-#exchange_declare(exchange=None, exchange_type='direct', passive=False, durable=False, auto_delete=False, internal=False, nowait=False, arguments=None, type=None)
-#queue_declare(queue='', passive=False, durable=False, exclusive=False, auto_delete=False, nowait=False, arguments=None)
         self.amqpoptions = { 'server'       : 'localhost',
                              'user'         : 'guest',  
                              'password'     : 'guest',  
@@ -464,7 +462,7 @@ class IRCClient:
     ### List selected rules
     def ping(self,line,target):
         ### send PONG to IRC
-        self.ircprivmsg("%s: pong" % self.sendernick,target)
+        self.ircprivmsg("pong",target)
 
     ### prints help function
     def printircmds(self,line,target):
@@ -664,11 +662,6 @@ class IRCClient:
 
     def sanitycheck(self):
         for line in self.irclinelist:
-            ### Handle PING
-            if(line[0]=="PING"):
-                self.ircsend("PONG %s" % line[1])
-                continue
-
             ### Handle raw 433 (raw 433 is sent when the chosen nickname is in use)
             if(line[1]=="433"):
                 self.ircconsoleoutput("Nickname %s is in use, trying another..." % self.botnick)
