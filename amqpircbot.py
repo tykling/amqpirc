@@ -662,6 +662,11 @@ class IRCClient:
 
     def sanitycheck(self):
         for line in self.irclinelist:
+            ### Handle PING
+            if(line[0]=="PING"):
+                self.ircsend("PONG %s" % line[1])
+                continue
+
             ### Handle raw 433 (raw 433 is sent when the chosen nickname is in use)
             if(line[1]=="433"):
                 self.ircconsoleoutput("Nickname %s is in use, trying another..." % self.botnick)
