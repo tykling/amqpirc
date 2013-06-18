@@ -1,6 +1,6 @@
 % Commented example (json) config for the AMQPBot
 % Use '%' for comments...
-% This is the options for the AMQP and IRC clients, they should be pretty explanatory.
+% This is the options for the AMQP and IRC clients, they should be pretty self explanatory.
 {
 "amqp_options" : {
         "server"     : "127.0.0.1",  % The AMQP/RabbitMQ server hostname or IP (default: 'localhost')

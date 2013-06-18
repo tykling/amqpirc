@@ -96,23 +96,45 @@ specification and meaning:
     % This is the options for the AMQP and IRC clients, they should be pretty explanatory.
     {
     "amqp_options" : {
-            "server"     : "127.0.0.1",  % The AMQP/RabbitMQ server hostname or IP (default: 'localhost')
-            "user"       : "guest",      % The AMQP username (default: 'guest')
-            "password"   : "guest",      % The AMQP password (default: 'guest') 
-            "exchange"   : "myexchange", % The AMQP exchange name (default 'myexchange')
-            "routingkey" : "#",          % Routingkey to listen for. (default: '#')
-            "maxfetch"   : "20",         % Maxminum number of fetches per fetch-session (default: '20').
-            "vhost"      : "/"           % The AMQP vhost (default: '/')
-        },
-    "irc_options" : {
-            "host" : "irc.freenode.net", % The IRC server hostname or IP (default: 'irc.efnet.org')
-            "port" : "6697",             % The IRC server port (default: 6667)
-            "nick" : "amqpbot",          % The bots IRC nickname (default: 'amqpirc')
-            "realname" : "",             % The bots IRC realname (default: 'amqpirc')
-            "ident" : "",                % The bots IRC ident (default: 'amqpirc')
-            "channel" : "amqpbotchan",   % The IRC channel the bot should join (default: '#amqpirc') prepends a '#' if not present
-            "ssl_enabled" : "yes"        % Whether or not SSL should be enabled for the IRC connection (default: no)
-        }        
+            "server"       : "127.0.0.1",  % The AMQP/RabbitMQ server hostname or IP (default: 'localhost')
+            "user"         : "guest",      % The AMQP username (default: 'guest')
+            "password"     : "guest",      % The AMQP password (default: 'guest') 
+            "exchange"     : "myexchange", % The AMQP exchange name (default 'myexchange')
+            "routingkey"   : "#",          % Routingkey to listen for. (default: '#')
+            "maxfetch"     : "20",         % Maxminum number of fetches per fetch-session (default: '20').
+            "vhost"        : "/",          % The AMQP vhost (default: '/')
+
+    % The rest of the AMQP options settings are the options parameters to be passed on creation of queues/exchanges.
+    % See https://pika.readthedocs.org/en/latest/modules/channel.html  for documention. 
+    % All default values for AMQP are the default values from PIKA except for exchange type, that is 'topic'
+    % Exchange options:
+            "exc_passive"  : False, % Perform a declare or just check to see if it exists
+            "exc_durable"  : False, % Survive a reboot of RabbitMQ
+            "exc_autodel"  : False, % Autodelete: Remove when no more queues are bound to it
+            "exc_internal" : False, % Can only be published to by other exchanges                           
+            "exc_nowait"   : False, % Do not expect an Exchange.DeclareOk response                            
+            "exc_args"     : None,  % Custom key/value pair arguments for the exchange (must be given as a json-object)                          
+            "exc_type"     : "topic", % The exchange type to use                            
+
+    % Queue options
+            "queue"        : "",    % Queue name
+            "que_passive"  : False, % Only check to see if the queue exists
+            "que_durable"  : False, % Survive reboots of the broker
+            "que_exclusive": False, % Only allow access by the current connection
+            "que_autodel"  : False, % Delete after consumer cancels or disconnects
+            "que_nowait"   : False, % Do not wait for a Queue.DeclareOk                            
+            "que_args"     : None   % Custom key/value arguments for the queue (must be given as a json-object)                          
+    },
+"irc_options" : {
+        "host"         : "irc.freenode.net", % The IRC server hostname or IP (default: 'irc.efnet.org')
+        "port"         : "6697",             % The IRC server port (default: 6667)
+        "serverpass"   : false,              % Password for the IRC server (default: false i.e. no password)
+        "nick"         : "amqpbot",          % The bots IRC nickname (default: 'amqpirc')
+        "realname"     : "",                 % The bots IRC realname (default: 'amqpirc')
+        "ident"        : "",                 % The bots IRC ident (default: 'amqpirc')
+        "channel"      : "amqpbotchan",      % The IRC channel the bot should join (default: '#amqpirc') prepends a '#' if not present
+        "channelpass"  : false,              % Password for the channel (default: false i.e. no password)
+        "ssl_enabled"  : true                % Whether or not SSL should be enabled for the IRC connection (default: false)        }        
     % This is the users that can access the bots commands.
     % If no users is supplied in the config (i.e. by ommitting the "users" entry), everyone is allowed.
     "users" : [
