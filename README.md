@@ -88,8 +88,8 @@ See the commented example config file for details of this works.
 Configuration of the bots is done by supplying json-encoded config files at startup. The config files contains information about
 AMQP settings, IRC server settings etc. In addition it is possible to specify different table types as described above. The '%' symbol
 is used for making comments in the configuration files. If an entry is omitted or set to nothing (i.e. "value" : "") default values is
-used. A commented example is shown below, which also explains the details of the tables'
-specification and meaning:
+used. A full commented config example is shown below, which also explains the details of the tables'
+specification and meaning. There is also a minimal version in the repos.
 
     % Commented example (json) config for the AMQPBot
     % Use '%' for comments...
@@ -125,7 +125,7 @@ specification and meaning:
             "que_nowait"   : False, % Do not wait for a Queue.DeclareOk                            
             "que_args"     : None   % Custom key/value arguments for the queue (must be given as a json-object)                          
     },
-"irc_options" : {
+    "irc_options" : {
         "host"         : "irc.freenode.net", % The IRC server hostname or IP (default: 'irc.efnet.org')
         "port"         : "6697",             % The IRC server port (default: 6667)
         "serverpass"   : false,              % Password for the IRC server (default: false i.e. no password)
