@@ -346,6 +346,7 @@ class IRCClient:
         self.realname    = options['realname']
         self.serverpass  = options['serverpass']
         self.channelpass = options['channelpass']
+        self.compact = options['compact']
         self.debug       = debug 
         self.ircq        = deque()
         self.sendernick  = ""
@@ -593,7 +594,7 @@ class IRCClient:
                 msg = self.amqphandler.amqpq.popleft()
                 if self.cfg.routing_key_filter(msg[0]):
                     # format routingkey irc line
-                    if self.ircoptions['compact']:
+                    if self.compact:
                         self.ircprivmsg("%s: %s" % (msg[0],msg[1]))
                     else:
                         msg_status = " (%s messages in bot queue)" % len(self.amqphandler.amqpq)
