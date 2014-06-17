@@ -4,8 +4,7 @@ and you can send AMQP messages from IRC by sending commands to the bot.
 
 Amqpirc was initially written by Thomas Steen Rasmussen <thomas@gibfest.dk>,  
 with a modified/enhanced version developed by Lasse Grinderslev Andersen <borgtu@etableret.dk>.
-Latest version can be found on Github: https://github.com/tykling/amqpirc or 
-https://github.com/borgtu/amqpirc - pull requests are welcome.
+Latest version can be found on Github: https://github.com/tykling/amqpirc - pull requests are welcome.
  
 ### List of features
 - Relay AMQP messages to IRC and send messages from IRC to AMQP
