@@ -66,7 +66,8 @@ class AMQPBotConfig:
                             'realname'    : 'amqpirc bot',
                             'ident'       : 'amqpirc',
                             'channel'     : '#amqpirc',
-                            'ssl_enabled' : False}
+                            'ssl_enabled' : False,
+                            'compact'     : False}
 
 
         self.filtertables      =  { 'allow' : list(),
@@ -592,12 +593,15 @@ class IRCClient:
                 msg = self.amqphandler.amqpq.popleft()
                 if self.cfg.routing_key_filter(msg[0]):
                     # format routingkey irc line
-                    msg_status = " (%s messages in bot queue)" % len(self.amqphandler.amqpq)
-                    msg[0]     = self.cfg.string_formatting(msg[0]) + msg_status
-                    if self.debug:
-                        self.ircprivmsg("Routing key allowed")
-                    self.ircprivmsg(msg[0])
-                    self.ircprivmsg("%s" % msg[1])
+                    if self.ircoptions['compact']:
+                        self.ircprivmsg("%s: %s" % (msg[0],msg[1]))
+                    else:
+                        msg_status = " (%s messages in bot queue)" % len(self.amqphandler.amqpq)
+                        msg[0]     = self.cfg.string_formatting(msg[0]) + msg_status
+                        if self.debug:
+                            self.ircprivmsg("Routing key allowed")
+                        self.ircprivmsg(msg[0])
+                        self.ircprivmsg("%s" % msg[1])
                 elif(self.debug):
                     self.ircprivmsg("Routing key denied")
 
