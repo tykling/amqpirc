@@ -609,7 +609,7 @@ class IRCClient:
     ########### Misc commands for IRChandling ###################
     ### Append botnick to console output
     def ircconsoleoutput(self,message):
-        consoleoutput("%s: %s" % (self.botnick, message))   
+        consoleoutput("%s: %s" % (self.botnick, message.decode('utf-8')))   
 
     ### Read from the socket and prepare data for parsing 
     def readirc(self):
@@ -645,9 +645,9 @@ class IRCClient:
     def queuesend(self):
         if(len(self.ircq)>0):
             try:
-                self.s.send(self.ircq.popleft())
+                self.s.send(self.ircq.popleft().decode('utf-8'))
             except Exception as e:
-                self.ircconsoleoutput("Socket exception sending to IRC, type: %s exception message: %s" % (str(type(e)),e.strerror))
+                self.ircconsoleoutput("Socket exception sending to IRC, type: %s exception message: %s" % (str(type(e)),e))
                 sys.exit(1)
 
     def joinchannel(self,channel=None):
