@@ -1,11 +1,10 @@
 #!/usr/local/bin/python
 #####################################################################
-#
-# AMQPBot an IRC bot that relays/sends AMQP messages to/from IRC.
-#
-# README and the latest version of the script can be found on Github:
-# https://github.com/tykling/amqpirc or possibly
-# https://github.com/borgtu/amqpirc
+###
+### AMQPBot an IRC bot that relays/sends AMQP messages to/from IRC.
+###
+### README and the latest version of the script can be found on Github:
+### https://github.com/tykling/amqpirc
 #####################################################################
 
 ### Load libraries
@@ -24,7 +23,7 @@ from collections import deque
 
 ### Function to output to the console with a timestamp
 def consoleoutput(message):
-    print " [%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),message)
+    print " [%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),message.decode('utf-8'))
 
 ### class for amqpmsg-formatting table types
 class StrFormatRules:
@@ -119,7 +118,7 @@ class AMQPBotConfig:
                     self.amqpoptions[key] = amqpo[key]
         else:
             consoleoutput("Did not find any 'amqp_options' entry in config, was that on purpose?")
-                
+
         ## handle IRCOptions here
         if 'irc_options' in jsonblob:
             irco = jsonblob['irc_options']
